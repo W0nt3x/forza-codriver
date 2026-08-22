@@ -42,7 +42,10 @@ function rateLimited(ip, now) {
   if (stamps.length >= RATE_MAX) { recent.set(ip, stamps); return true; }
   stamps.push(now);
   recent.set(ip, stamps);
-  if (recent.size > 5000) recent.clear(); // never grow without bound
+  // Never grow without bound. Yes, a flood from thousands of addresses resets
+  // every counter; this limiter is the courtesy layer, the Cloudflare rate
+  // rule in front of it is the real one.
+  if (recent.size > 5000) recent.clear();
   return false;
 }
 
@@ -143,9 +146,12 @@ async function openPullRequest(env, file, stage, content) {
     },
   });
 
+  // Title and body are markdown in a repo people read: one line each, capped,
+  // whatever the file says.
+  const oneLine = (t, max) => String(t ?? "").replace(/[\r\n\t]+/g, " ").trim().slice(0, max);
   const community = stage.community || {};
-  const race = community.race || stage.name;
-  const author = (community.author || "").trim() || "anonymous";
+  const race = oneLine(community.race, 80) || oneLine(stage.name, 80);
+  const author = oneLine(community.author, 60) || "anonymous";
   const pr = await gh("pulls", {
     method: "POST",
     body: {

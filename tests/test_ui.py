@@ -43,7 +43,9 @@ def client(project):
     # talk to it (or to GitHub); each test that needs a remote installs a fake.
     app.state.post_json = _no_network
     app.state.fetch = _no_network
-    with TestClient(app) as c:
+    # What the real page does: opened as an IP, and every request carries the
+    # page header. Tests for the guards themselves build their own clients.
+    with TestClient(app, base_url="http://127.0.0.1:8777", headers={"X-Codriver": "1"}) as c:
         yield c, root, cfg
 
 
@@ -497,4 +499,79 @@ def test_voice_pack_name_cannot_be_a_path(client):
     for bad in ("../x", "a/b", "a\\b", "..", "Sp ace"):
         r = c.post("/api/voice/generate", json={"lang": "en", "name": bad})
         assert r.status_code == 400, (bad, r.text)
+
+
+def test_state_changing_requests_need_the_page_header(client):
+    """A plain POST is a "simple request": a browser sends it cross-origin
+    from any page, without asking. /api/stop, /api/scan and /share take no
+    body, so a random website could have stopped a run or shared a stage.
+    Requiring a custom header forces a CORS preflight, which nothing here
+    answers. Reads stay open; they return nothing a page could act on."""
+    c, root, cfg = client
+    bare = TestClient(c.app, base_url="http://127.0.0.1:8777")
+    assert bare.get("/api/state").status_code == 200
+    assert bare.post("/api/stop").status_code == 403
+    assert bare.post("/api/scan", json={"duration": 1}).status_code == 403
+    assert bare.post("/api/stages/waterfall-trail/share").status_code == 403
+    assert bare.delete("/api/stages/waterfall-trail").status_code == 403
+    assert bare.put("/api/config", json={"key": "telemetry.port", "value": 5300}).status_code == 403
+    assert cfg.get("telemetry.port") == 5400, "and nothing changed"
+    assert c.post("/api/stop").status_code != 403, "the page itself is fine"
+
+
+def test_a_domain_name_in_the_host_header_is_refused(client):
+    """DNS rebinding: a page on evil.example whose name later resolves to
+    127.0.0.1 would be same-origin with this API and could read it all. The
+    UI is only ever opened as localhost or an IP, so a domain name in Host is
+    never legitimate."""
+    c, root, cfg = client
+    for bad in ("evil.example", "evil.example:8777", "codriver.evil.example"):
+        assert c.get("/api/state", headers={"host": bad}).status_code == 400, bad
+    for ok in ("localhost:8777", "localhost", "127.0.0.1:8777", "192.168.2.44:8777",
+               "[::1]:8777", "gaming-pc.localhost:8777"):
+        assert c.get("/api/state", headers={"host": ok}).status_code == 200, ok
+
+
+def test_websocket_accepts_the_page_and_refuses_foreign_origins(client):
+    c, root, cfg = client
+    # The TestClient connects websockets as Host "testserver" whatever the
+    # base_url says; a real browser sends the address bar host, so say so.
+    host = {"host": "127.0.0.1:8777"}
+    with c.websocket_connect("/ws", headers={**host, "origin": "http://127.0.0.1:8777"}):
+        pass
+    with c.websocket_connect("/ws", headers={**host, "origin": "http://192.168.2.44:8777"}):
+        pass
+    with pytest.raises(Exception):
+        with c.websocket_connect("/ws", headers={**host, "origin": "http://evil.example"}):
+            pass
+    with pytest.raises(Exception):  # rebinding: a domain name as Host
+        with c.websocket_connect("/ws", headers={"host": "evil.example:8777"}):
+            pass
+
+
+def test_downloads_are_bounded(monkeypatch):
+    """community.repo is configurable, so whatever answers there is not
+    trusted to be small. A stage is a few hundred KB; five MB is generous."""
+    import urllib.request
+
+    from codriver.ui.server import _http_get
+
+    class Resp:
+        def __init__(self, size):
+            self.size = size
+
+        def read(self, n=-1):
+            return b"x" * (self.size if n < 0 else min(n, self.size))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Resp(6_000_000))
+    with pytest.raises(ValueError):
+        _http_get("https://example.invalid/big.json")
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Resp(10))
+    assert _http_get("https://example.invalid/small.json") == b"x" * 10
 

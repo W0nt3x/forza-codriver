@@ -22,8 +22,9 @@ dependencies = [
 # TTS for `codriver voice generate --engine edge`. The offline sapi engine
 # needs nothing beyond Windows.
 voice = ["edge-tts>=6.1"]
-# httpx is what Starlette's TestClient drives the API tests with.
-dev = ["pytest>=7.4", "httpx>=0.24"]
+# Starlette's TestClient drives the API tests: httpx2 since Starlette 1.x,
+# httpx before that. Both listed so a fresh clone works either way.
+dev = ["pytest>=7.4", "httpx>=0.24", "httpx2>=2.0"]
 
 [project.scripts]
 codriver = "codriver.cli:main"

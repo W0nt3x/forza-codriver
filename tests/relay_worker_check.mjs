@@ -72,6 +72,16 @@ assert.equal(prCall.body.base, "main");
 assert.match(prCall.body.body, /nils/);
 assert.equal(calls[0].headers.authorization, "Bearer tok");
 
+// author and race end up in markdown a human reads: one line, capped
+calls.length = 0;
+r = await post({ file: "coast-road-sprint.json", stage: { ...stage, community: { race: "x\n# heading", author: "evil\n- [ ] " + "a".repeat(200) } } });
+assert.equal(r.status, 200);
+assert.ok(!calls[4].body.title.includes("\n"), "title is one line");
+assert.ok(!calls[4].body.body.includes("\n- [ ]"), "author cannot start a markdown line of its own");
+const authorLine = calls[4].body.body.split("\n")[0];
+assert.ok(authorLine.startsWith("Shared from the codriver app by **evil - [ ] a"), authorLine);
+assert.ok(authorLine.length <= "Shared from the codriver app by ****.".length + 60, "author is capped to 60");
+
 // sharing a stage that already exists becomes an update, with the old sha
 existingFile = true;
 calls.length = 0;

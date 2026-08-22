@@ -8,7 +8,9 @@ const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", 
 const api = async (path, method = "GET", body) => {
   const res = await fetch(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    // X-Codriver marks a request as coming from this page; the server refuses
+    // state changes without it, which keeps other websites out of the API.
+    headers: { "X-Codriver": "1", ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {

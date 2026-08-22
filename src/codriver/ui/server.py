@@ -337,12 +337,111 @@ def _stage_path(stages_dir: Path, name: object):
 climb out of the stages folder."""
 
 
-def _http_get(url: str, timeout_s: float = 8.0) -> bytes:
+MAX_DOWNLOAD_BYTES = 5_000_000
+
+
+def _http_get(url: str, timeout_s: float = 8.0, max_bytes: int = MAX_DOWNLOAD_BYTES) -> bytes:
+    """GET with a ceiling. The community repo is configurable, so whatever
+    answers there is not trusted to be small; a stage is a few hundred KB."""
     import urllib.request
 
     req = urllib.request.Request(url, headers={"User-Agent": "codriver"})
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        return resp.read()
+        data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"response larger than {max_bytes // 1_000_000} MB, not reading it")
+    return data
+
+
+# --------------------------------------------------------------------------
+# Browser-side guards. The API has no login (it is one person's PC), so the
+# browser's own rules are what keeps other web pages out of it:
+#
+# * A page on any site can fire a plain POST at 127.0.0.1 ("simple request",
+#   no preflight, the browser just sends it) and, although it cannot read the
+#   answer, the side effect happens: a run stopped, a stage shared. Requiring
+#   a custom header on every state-changing request turns it into a request
+#   that needs a CORS preflight, and nothing here answers preflights.
+# * DNS rebinding: a page whose domain first resolves to the attacker and, a
+#   minute later, to 127.0.0.1 becomes same-origin with the API and may read
+#   everything. The UI is only ever opened as localhost or an IP address, so a
+#   DNS name in the Host header is never legitimate and is refused outright.
+# * The same for the WebSocket: its Origin must be localhost or an IP.
+# --------------------------------------------------------------------------
+
+PAGE_HEADER = "x-codriver"
+_MUTATING = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+def _hostname_ok(name: str) -> bool:
+    import ipaddress
+
+    name = (name or "").strip().lower().strip("[]")
+    if not name:
+        return True  # no Host at all: not a browser
+    if name == "localhost" or name.endswith(".localhost"):
+        return True
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return False
+
+
+def _host_header_ok(host: str) -> bool:
+    host = (host or "").strip()
+    if host.startswith("["):  # [::1]:8777
+        return _hostname_ok(host.split("]")[0] + "]")
+    if host.count(":") == 1:  # name:port
+        host = host.rsplit(":", 1)[0]
+    return _hostname_ok(host)
+
+
+def _origin_ok(origin: str | None) -> bool:
+    from urllib.parse import urlsplit
+
+    if not origin:
+        return True  # no Origin: not a browser page
+    try:
+        return _hostname_ok(urlsplit(origin).hostname or "")
+    except ValueError:
+        return False
+
+
+class BrowserGuard:
+    """Pure ASGI middleware, see the block comment above."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        if not _host_header_ok(headers.get("host", "")):
+            return await self._reject(scope, receive, send, 400,
+                                      "open the UI as localhost or an IP address, not a domain name")
+        if scope["type"] == "http":
+            if (scope.get("method", "GET") in _MUTATING and scope.get("path", "").startswith("/api/")
+                    and headers.get(PAGE_HEADER) != "1"):
+                return await self._reject(scope, receive, send, 403,
+                                          "state-changing requests must come from the codriver page (X-Codriver header)")
+        elif not _origin_ok(headers.get("origin")):
+            return await self._reject(scope, receive, send, 403, "foreign origin")
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _reject(scope, receive, send, status: int, detail: str) -> None:
+        if scope["type"] == "websocket":
+            await receive()  # the connect message, then refuse the handshake
+            await send({"type": "websocket.close", "code": 1008})
+            return
+        body = json.dumps({"detail": detail}).encode("utf-8")
+        await send({"type": "http.response.start", "status": status, "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+        ]})
+        await send({"type": "http.response.body", "body": body})
 
 
 def _http_post_json(
@@ -963,6 +1062,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         finally:
             sockets.discard(websocket)
 
+    app.add_middleware(BrowserGuard)
     return app
 
 

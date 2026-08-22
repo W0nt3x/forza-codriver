@@ -190,9 +190,11 @@ tab shows a QR code instead: scan it with a phone on the same WLAN, prop the
 phone next to your wheel, done. It shows the next call in large type, the
 distance to it, and a log of what was said. Audio still comes from the PC.
 
-The HUD itself never leaves your WLAN and needs no account. If you'd rather
-the UI weren't reachable from other devices at all, start with
-`start.bat --local-only`.
+The HUD itself never leaves your WLAN and needs no account. The UI answers
+only when opened as `localhost` or an IP address, and it refuses changes
+that do not come from its own page, so a random website you have open in
+another tab cannot poke it. If you'd rather the UI weren't reachable from
+other devices at all, start with `start.bat --local-only`.
 
 ## Tuning
 
