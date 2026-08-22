@@ -177,12 +177,16 @@ def run_stage(
             flush_interval_s=cfg.get("capture.flush_interval_s"),
         ).open()
 
+    voice_name = None if isinstance(bank, BeepBank) else getattr(bank, "name", "voice")
+    if voice_name is None:
+        log.warning("no voice pack loaded: you will hear placeholder beeps")
     emit({
         "kind": "waiting",
         "stage": stage.name,
         "notes": len(stage.notes),
         "length_m": stage.length_m,
         "port": cfg.get("telemetry.port"),
+        "voice": voice_name,
     })
 
     with UdpListener(

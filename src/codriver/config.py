@@ -126,6 +126,20 @@ class Config:
         return cfg
 
     @property
+    def root(self) -> Path:
+        """The project folder: where stages/, recordings/ and voices/ live.
+        Always next to config/, never the current working directory, so the
+        UI, the CLI and the runtime agree on where things are no matter
+        where they were started from."""
+        return self.config_dir.parent
+
+    def path(self, key: str) -> Path:
+        """A config value that names a folder or file, made absolute against
+        the project root unless it already is absolute."""
+        p = Path(str(self.get(key))).expanduser()
+        return p if p.is_absolute() else self.root / p
+
+    @property
     def defaults_path(self) -> Path:
         return self.config_dir / DEFAULTS_NAME
 

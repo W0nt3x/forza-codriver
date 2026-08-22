@@ -66,7 +66,7 @@ def cmd_listen(args: argparse.Namespace, cfg: Config) -> int:
 def cmd_capture(args: argparse.Namespace, cfg: Config) -> int:
     from ..record.recon import capture_stream
 
-    directory = Path(args.dir or cfg.get("capture.dir"))
+    directory = Path(args.dir) if args.dir else cfg.path("capture.dir")
     path = Path(args.output) if args.output else cap.default_capture_path(
         directory, args.name
     )

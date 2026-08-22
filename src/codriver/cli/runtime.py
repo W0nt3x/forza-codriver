@@ -15,7 +15,7 @@ def cmd_run(args: argparse.Namespace, cfg: Config) -> int:
     stage = load(args.stage)
     record_dir = None
     if cfg.get("runtime.record.enabled") and not args.no_record:
-        record_dir = Path(cfg.get("runtime.record.dir"))
+        record_dir = cfg.path("runtime.record.dir")
     run_stage(
         stage,
         cfg,

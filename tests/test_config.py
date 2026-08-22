@@ -148,3 +148,21 @@ def test_class_speed_bands_are_ascending_and_six_long():
     bands = Config.load(find_config_dir()).get("stage.curvature.class_speed_bands_kmh")
     assert len(bands) == 6
     assert bands == sorted(bands)
+
+
+def test_paths_resolve_against_the_project_root_not_the_cwd(cfg_dir, tmp_path, monkeypatch):
+    """The UI writes voices/ and recordings/ next to config/; the runtime must
+    find them there wherever the process was started from. Seen live: a voice
+    pack generated in the UI came back as beeps because `run` looked in the
+    current working directory."""
+    (cfg_dir / "defaults.yaml").write_text(
+        yaml.safe_dump({"audio": {"voices_dir": "voices"}, "capture": {"dir": "C:/abs/recordings"}}),
+        encoding="utf-8",
+    )
+    cfg = Config.load(cfg_dir)
+    elsewhere = tmp_path / "somewhere" / "else"
+    elsewhere.mkdir(parents=True)
+    monkeypatch.chdir(elsewhere)
+    assert cfg.root == cfg_dir.parent
+    assert cfg.path("audio.voices_dir") == cfg_dir.parent / "voices"
+    assert cfg.path("capture.dir").as_posix() == "C:/abs/recordings"

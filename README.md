@@ -29,13 +29,15 @@ still on the road, and the notes keep improving the more you race a stage.
 
 You need Windows, Forza Horizon 6 on the same PC, and about ten minutes.
 
-**1. Install Python** from <https://www.python.org/downloads/> (3.11 or
-newer). In the installer, tick **"Add python.exe to PATH"**. That checkbox is
-the one thing people miss.
+**1. Get codriver.** Either `git clone` this project (then `update.bat` can
+fetch new versions later), or download it as a ZIP (green *Code* button,
+*Download ZIP*) and unzip it somewhere.
 
-**2. Get codriver.** Download this project (green *Code* button, *Download
-ZIP*), unzip it somewhere, and double-click **`install.bat`**. It sets up a
-private Python environment and fetches what it needs. Takes a minute.
+**2. Double-click `install.bat`.** It looks for Python; if there is none, it
+offers to install it for you (one keypress, recommended). Then it sets up a
+private Python environment and fetches what it needs. A minute or two. If
+you would rather install Python yourself: <https://www.python.org/downloads/>,
+3.11 or newer, and tick **"Add python.exe to PATH"** in the installer.
 
 **3. Start it.** Double-click **`start.bat`**. A browser tab opens. Windows
 asks once whether to allow it on private networks; say yes, that's what lets
@@ -66,6 +68,13 @@ race of a stage gets recorded automatically. Press **Learn** on the stage
 now and then and the notes improve.
 
 ---
+
+## Updating
+
+Double-click **`update.bat`**. It fetches the newest version and keeps your
+settings, stages, recordings and voices (they are yours, not the program's).
+This works when the project was cloned with git; a ZIP download cannot update
+itself, the script tells you what to copy where in that case.
 
 ## How it works
 

@@ -314,10 +314,13 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
     queue: asyncio.Queue = asyncio.Queue()
     loop_holder: dict[str, asyncio.AbstractEventLoop] = {}
 
+    # All project folders resolve against the config's project root, the
+    # same way the runtime resolves them, so what the UI writes is what
+    # `run` finds, wherever the process was started from.
     stages_dir = root / "stages"
-    recordings_dir = root / cfg.get("capture.dir")
-    runs_dir = root / cfg.get("runtime.record.dir")
-    voices_dir = root / cfg.get("audio.voices_dir")
+    recordings_dir = cfg.path("capture.dir")
+    runs_dir = cfg.path("runtime.record.dir")
+    voices_dir = cfg.path("audio.voices_dir")
 
     def fanout(event: dict) -> None:
         loop = loop_holder.get("loop")
@@ -578,9 +581,15 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         cfg.poll()
         local = yaml.safe_load(cfg.local_path.read_text(encoding="utf-8")) if cfg.local_path.is_file() else {}
         voices = [p.parent.name for p in sorted(voices_dir.glob("*/manifest.yaml"))]
+        pack_options = [{"value": v, "label": v} for v in voices]
+        current = str(cfg.get("audio.voice_pack"))
+        if current not in voices:
+            # Show the truth: the configured pack does not exist. A dropdown
+            # that silently displays its first entry instead is how people end
+            # up hearing beeps while believing a voice is selected.
+            pack_options.insert(0, {"value": current, "label": f"{current} (not generated yet)"})
         options = {
-            "audio.voice_pack": [{"value": v, "label": v} for v in voices]
-            or [{"value": cfg.get("audio.voice_pack"), "label": f"{cfg.get('audio.voice_pack')} (not generated yet)"}],
+            "audio.voice_pack": pack_options,
             "audio.device": await asyncio.get_running_loop().run_in_executor(None, output_devices),
         }
         return {"fields": config_schema(cfg.defaults_path, cfg.data, local or {}, options)}
@@ -620,8 +629,18 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             emit({"kind": "voice_started", "name": name, "lang": lang, "engine": engine})
             result = generate_pack(voices_dir / name, engine=engine, voice=voice,
                                    samplerate=cfg.get("audio.samplerate"), language=lang)
+            # If the configured pack does not exist, this new one becomes the
+            # active voice right away. Nobody should generate a voice and then
+            # hear beeps because a dropdown still pointed at a missing folder.
+            configured = str(cfg.get("audio.voice_pack"))
+            selected = False
+            if not (voices_dir / configured / "manifest.yaml").is_file():
+                _set_local(cfg.local_path, "audio.voice_pack", name)
+                cfg.poll(immediate=True)
+                selected = True
             emit({"kind": "voice_done", "name": name, "clips": result.clips,
-                  "seconds": result.total_seconds, "voice": result.voice})
+                  "seconds": result.total_seconds, "voice": result.voice,
+                  "selected": selected})
             return result
 
         return _start("voice", job, f"generating voice '{name}'")

@@ -19,7 +19,7 @@ def cmd_build(args: argparse.Namespace, cfg: Config) -> int:
     err(f"built {stage.name} from {args.path}")
     err(report.render())
 
-    out = Path(args.output) if args.output else Path("stages") / f"{stage.name}.json"
+    out = Path(args.output) if args.output else cfg.root / "stages" / f"{stage.name}.json"
     save(stage, out)
     err(f"\nwrote {out}")
 
@@ -68,7 +68,7 @@ def cmd_learn(args: argparse.Namespace, cfg: Config) -> int:
     stage_path = Path(args.stage)
     stage = load(stage_path)
     runs = [Path(r) for r in args.runs] or runs_for_stage(
-        stage, Path(cfg.get("runtime.record.dir"))
+        stage, cfg.path("runtime.record.dir")
     )
     if not runs:
         err(

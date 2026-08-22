@@ -221,9 +221,10 @@ runtime:
 # Audio
 # ---------------------------------------------------------------------------
 audio:
-  # Name of the voice pack to use, from the voices folder. Without a pack you
-  # hear placeholder beeps. Changing this needs a restart of the co-driver.
-  voice_pack: "de"
+  # Name of the voice pack to use, from the voices folder. "default" is what
+  # Generate creates for English, "de" for German. Without a pack you hear
+  # placeholder beeps. Changing this needs a restart of the co-driver.
+  voice_pack: "default"
   # Folder where voice packs live.
   voices_dir: "voices"
   # Audio sample rate. Leave at 48000.

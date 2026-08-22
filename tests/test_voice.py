@@ -251,3 +251,27 @@ def test_each_language_has_a_default_edge_voice():
     from codriver.voice.vocab import DEFAULT_VOICES, VOCABULARIES
 
     assert set(DEFAULT_VOICES) == set(VOCABULARIES)
+
+
+def test_configured_bank_is_found_from_any_working_directory(tmp_path, monkeypatch):
+    """Regression for the UI bug: pack generated next to config/, runtime
+    started elsewhere, result beeps. The pack must load regardless of cwd."""
+    from codriver.config import Config
+    from codriver.voice.pack import WavBank, load_configured_bank
+
+    root = tmp_path / "project"
+    (root / "config").mkdir(parents=True)
+    (root / "config" / "defaults.yaml").write_text(
+        yaml.safe_dump({"audio": {"voices_dir": "voices", "voice_pack": "mine",
+                                  "samplerate": SR, "crossfade_ms": 25}}),
+        encoding="utf-8",
+    )
+    write_pack(root / "voices" / "mine", {"3": tone(0.25), "right": tone(0.3)})
+    cfg = Config.load(root / "config")
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    bank = load_configured_bank(cfg, BeepBank())
+    assert isinstance(bank, WavBank)
+    assert bank.name == "mine"

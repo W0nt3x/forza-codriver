@@ -16,7 +16,7 @@ def cmd_voice_generate(args: argparse.Namespace, cfg: Config) -> int:
     # An unnamed non-English pack lands in a directory named after its
     # language, so `--lang de` does not silently overwrite the English pack.
     name = args.name or ("default" if args.lang == "en" else args.lang)
-    out_dir = Path(args.output or (Path(cfg.get("audio.voices_dir")) / name))
+    out_dir = Path(args.output) if args.output else cfg.path("audio.voices_dir") / name
     try:
         result = generate_pack(
             out_dir,
@@ -50,7 +50,7 @@ def cmd_voice_check(args: argparse.Namespace, cfg: Config) -> int:
     from ..stage.schema import load
     from ..voice.pack import VoicePackError, check_pack, stage_coverage
 
-    pack_dir = Path(cfg.get("audio.voices_dir")) / (
+    pack_dir = cfg.path("audio.voices_dir") / (
         args.pack or cfg.get("audio.voice_pack")
     )
     try:

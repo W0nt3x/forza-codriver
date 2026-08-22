@@ -172,7 +172,10 @@ def load_configured_bank(cfg: Config, fallback: BeepBank) -> ConcatBank:
     *broken* pack is a mistake worth stopping for, so it raises.
     """
     pack_name = cfg.get("audio.voice_pack")
-    pack_dir = Path(cfg.get("audio.voices_dir")) / str(pack_name)
+    # Against the project root, never the working directory: the UI writes
+    # packs next to config/, and wherever the process was started from, this
+    # has to find them there.
+    pack_dir = cfg.path("audio.voices_dir") / str(pack_name)
     if not (pack_dir / MANIFEST_NAME).is_file():
         log.warning(
             "no voice pack at %s, using placeholder beeps. "

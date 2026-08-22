@@ -149,7 +149,13 @@ $("#btn-run").onclick = () => {
 };
 $("#btn-run-stop").onclick = () => api("/api/stop", "POST");
 function onRun(e) {
-  if (e.kind === "waiting") { $("#hud-state").textContent = "waiting"; $("#hud-next").textContent = `${e.stage} · waiting for telemetry on ${e.port}`; $("#hud-sub").textContent = ""; }
+  if (e.kind === "waiting") {
+    $("#hud-state").textContent = "waiting";
+    $("#hud-next").textContent = `${e.stage} · waiting for telemetry on ${e.port}`;
+    $("#hud-sub").textContent = e.voice
+      ? `voice: ${e.voice}`
+      : "no voice pack loaded, you will hear beeps. Generate one on the Voice tab and pick it under Config, then restart the co-driver.";
+  }
   if (e.kind === "localised") { $("#hud-sub").textContent = `localised at ${fmtKm(e.along_m)} km (${e.off_m.toFixed(1)} m off line)`; }
   if (e.kind === "suspended") { $("#hud-state").textContent = "suspended"; $("#hud-sub").textContent = "stream stopped (pause / rewind / finish?)"; }
   if (e.kind === "jump") { $("#hud-sub").textContent = "position jump, rewound? re-localising"; }
@@ -309,7 +315,13 @@ $("#btn-voice-gen").onclick = () => { $("#voice-out").textContent = ""; api("/ap
 function onVoice(e) {
   const out = $("#voice-out");
   if (e.kind === "voice_started") log(out, `generating '${e.name}' (${e.lang}, ${e.engine})… ~20 s`);
-  if (e.kind === "voice_done") { log(out, `done: ${e.clips} clips, ${e.seconds.toFixed(1)} s of audio, voice ${e.voice}. Set audio.voice_pack = ${e.name} in Config to use it.`); refreshState(); }
+  if (e.kind === "voice_done") {
+    log(out, `done: ${e.clips} clips, ${e.seconds.toFixed(1)} s of audio, voice ${e.voice}.`);
+    log(out, e.selected
+      ? `'${e.name}' is now the active voice. If the co-driver is running, stop and start it again.`
+      : `to use it, pick '${e.name}' under Config, Voice, then restart the co-driver.`);
+    refreshState();
+  }
   if (e.kind === "error") log(out, "error: " + e.message);
 }
 $("#btn-say").onclick = () => api("/api/voice/say", "POST", { text: $("#say-text").value, pack: $("#say-pack").value }).catch((x) => alert(x.message));

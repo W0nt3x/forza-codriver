@@ -192,3 +192,13 @@ def test_audio_device_empty_means_default(client):
     c, _, cfg = client
     assert c.put("/api/config", json={"key": "audio.device", "value": ""}).status_code == 200
     assert cfg.get("audio.device") is None
+
+
+def test_voice_dropdown_tells_the_truth_about_a_missing_pack(client):
+    """A fresh clone with voice_pack pointing at a pack that was never
+    generated must show that, not silently display the first existing pack as
+    selected while the runtime falls back to beeps."""
+    c, root, cfg = client
+    options = {f["key"]: f for f in c.get("/api/config").json()["fields"]}["audio.voice_pack"]["options"]
+    assert options[0]["value"] == cfg.get("audio.voice_pack")
+    assert "not generated yet" in options[0]["label"]
