@@ -19,6 +19,7 @@ recordings/**/*.ndjson
 stages/*.json
 stages/*.json.bak
 stages/*.gpx
+stages/share/
 !stages/example*.json
 
 # Voice packs are generated in 20 seconds with `codriver voice generate`.

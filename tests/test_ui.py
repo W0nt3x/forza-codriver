@@ -269,7 +269,7 @@ def test_share_writes_a_clean_file_with_credits(client, monkeypatch):
 
     r = c.post("/api/stages/coast-road-sprint/share", json={"author": "W0nt3x"})
     assert r.status_code == 200, r.text
-    out = root / "share" / "coast-road-sprint.json"
+    out = root / "stages" / "share" / "coast-road-sprint.json"
     assert out.is_file()
     data = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert data["community"]["author"] == "W0nt3x"

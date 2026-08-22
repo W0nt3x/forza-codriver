@@ -165,9 +165,11 @@ that holds nothing but stage files and needs no account to read.
 
 Built a good one yourself? Press **Share** on the stage. codriver writes a
 clean copy (the line, the notes, the speeds you drove; no personal data and no
-recording) and opens the upload page of that repository. Drag the file onto
-it, press *Propose changes*, and GitHub turns it into a pull request. Please
-name stages exactly like the race in Forza, so people find them.
+recording) into `stages/share/`, opens that folder, and opens the upload page
+of the community repository in your browser. Drag the file from the folder
+onto the page, press *Propose changes*, and GitHub turns it into a pull
+request (you need a GitHub account for that step; it is free). Please name
+stages exactly like the race in Forza, so people find them.
 
 ## Your phone as the HUD
 

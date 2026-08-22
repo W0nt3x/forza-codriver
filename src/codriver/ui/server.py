@@ -824,8 +824,8 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             "tool_version": __import__("codriver").__version__,
             "shared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        share_dir = root / "share"
-        share_dir.mkdir(exist_ok=True)
+        share_dir = stages_dir / "share"
+        share_dir.mkdir(parents=True, exist_ok=True)
         out = share_dir / f"{name}.json"
         out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
         upload_url = f"https://github.com/{repo}/upload/{branch}/stages"
