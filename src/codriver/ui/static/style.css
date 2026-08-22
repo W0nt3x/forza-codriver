@@ -7,6 +7,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 sys
 header { display: flex; align-items: center; gap: 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
 .brand { font-weight: 800; letter-spacing: .5px; font-size: 18px; }
 .brand span { color: var(--accent); }
+.brand .beta { font-size: 10px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 1px 7px; vertical-align: middle; margin-left: 4px; }
 nav { display: flex; gap: 4px; flex: 1; }
 nav button { background: none; border: 0; color: var(--muted); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 15px; }
 nav button.active, nav button:hover { background: var(--card); color: var(--text); }

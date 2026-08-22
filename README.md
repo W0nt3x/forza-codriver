@@ -4,6 +4,14 @@
 on a voice calls the corners before they arrive: *"one hundred, left tightens
 three"*. English or German.
 
+> **Status: early beta, work in progress.** It works, and I drive with it
+> most evenings, but it is young software built by one person and tuned on a
+> handful of stages. Expect rough edges: a corner called a touch early or
+> late, a setting that wants a restart, a stage that needs a rebuild after an
+> update. If something breaks,
+> [open an issue](https://github.com/W0nt3x/codriver-for-forza-horizon-6/issues)
+> and say what you did; recordings make almost everything reproducible.
+
 ## Why this exists
 
 I love the point-to-point races in Horizon, but they always felt like half a
@@ -223,6 +231,30 @@ main ones are `capture`, `build`, `run`, `learn`, `voice generate` and
 `replay`. That last one plays a recording back into the co-driver without
 the game running, which is how most of this was actually developed. Tuning
 against replays beats restarting a race forty times.
+
+## Coming soon
+
+Rough order, no dates. Things move when I get to drive enough to test them.
+
+- **Real voices.** Recorded human co-drivers instead of text-to-speech, and a
+  way to record your own pack from the Voice tab: read the word list into a
+  microphone, done.
+- **Better pace notes.** The corner algorithm is a first version. Sharper
+  severity, fewer phantom corners on bumpy recon lines, smarter "into" and
+  "and" linking, and the words the vocabulary already has but the generator
+  does not use yet: *don't cut*, *narrows*, *keep left*, *square*.
+- **More from the telemetry.** Surface changes (tarmac to gravel and back),
+  narrowing roads, and the water thresholds calibrated on a real ford.
+- **Learn, properly.** Several drives already smooth the line and record your
+  speeds; next is letting them move the calls themselves, so a corner you
+  always brake harder for than its number says gets the tighter number.
+- **Other games.** Forza lives in one module by design. DiRT Rally 2.0,
+  EA WRC and Assetto Corsa Rally all send UDP telemetry; adapters for them
+  should touch nothing else.
+- **Easier install.** A single download that needs no Python step at all.
+- **Community.** Ratings for shared stages and automatic checks on uploads.
+
+Have a wish that is not on the list? Open an issue.
 
 ## When something doesn't work
 
