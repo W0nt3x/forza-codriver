@@ -275,3 +275,17 @@ def test_share_writes_a_clean_file_with_credits(client, monkeypatch):
     assert data["community"]["author"] == "W0nt3x"
     assert data["community"]["race"] == "coast-road-sprint"
     assert "upload/main/stages" in r.json()["upload_url"]
+
+
+def test_restart_badge_marks_what_is_read_only_at_start(client):
+    """Voice pack, audio device, telemetry port: read once when the co-driver
+    starts. Live values (reaction buffer, crossfade) must not carry it."""
+    c, _, _ = client
+    by_key = {f["key"]: f for f in c.get("/api/config").json()["fields"]}
+    assert by_key["audio.voice_pack"]["needs_restart"] is True
+    assert by_key["audio.device"]["needs_restart"] is True
+    assert by_key["telemetry.port"]["needs_restart"] is True
+    assert by_key["runtime.record.enabled"]["needs_restart"] is True
+    assert by_key["runtime.trigger.reaction_buffer_s"]["needs_restart"] is False
+    assert by_key["audio.crossfade_ms"]["needs_restart"] is False
+    assert by_key["stage.curvature.window_points"]["needs_restart"] is False

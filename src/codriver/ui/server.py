@@ -90,6 +90,14 @@ RANGES = {  # key: (min, max, step) for a slider
 UNITS = {"s": "seconds", "ms": "ms", "m": "metres", "kmh": "km/h", "db": "dB",
          "points": "points", "hz": "Hz", "g": "g", "bytes": "bytes", "frames": "frames"}
 
+# Read once when the co-driver (or a recording) starts, not while it runs.
+# Everything else under runtime/audio is picked up live by the hot reload.
+RESTART_PREFIXES = (
+    "telemetry.", "capture.", "replay.", "logging.", "runtime.record.",
+    "audio.voice_pack", "audio.voices_dir", "audio.samplerate", "audio.channels",
+    "audio.blocksize", "audio.device", "audio.gain_db",
+)
+
 
 def _label(key: str) -> str:
     """'runtime.trigger.reaction_buffer_s' -> 'Reaction buffer (seconds)'."""
@@ -177,6 +185,7 @@ def config_schema(
             "label": _label(path),
             "tier": _tier(path),
             "needs_rebuild": path.startswith("stage."),
+            "needs_restart": path.startswith(RESTART_PREFIXES),
             "value": current,
             "default": yaml.safe_load(value),
             "overridden": _dig(local, path, missing=True) is not _MISSING,

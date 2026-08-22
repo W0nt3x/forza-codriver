@@ -335,7 +335,9 @@ function renderField(f) {
   } else {
     input = `<input data-key="${f.key}" data-type="${f.type}" value="${esc(f.value)}" ${f.type === "int" || f.type === "float" ? 'inputmode="decimal"' : ""}>`;
   }
-  const badge = f.needs_rebuild ? `<span class="badge" title="takes effect when you build or learn a stage">rebuild</span>` : "";
+  const badge =
+    (f.needs_rebuild ? `<span class="badge" title="takes effect when you build or learn a stage">rebuild</span>` : "") +
+    (f.needs_restart ? `<span class="badge restart" title="takes effect the next time you start the co-driver (Stop, then Start)">restart</span>` : "");
   row.innerHTML =
     `<div class="cfg-key"><span class="dot"></span>${f.label}${badge}<div class="cfg-keyname">${f.key}</div></div>` +
     `<div class="cfg-input">${input}<button class="reset" data-key="${f.key}" title="back to default (${esc(f.default)})">reset</button></div>` +
