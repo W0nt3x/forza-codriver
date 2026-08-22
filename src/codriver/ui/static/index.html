@@ -138,6 +138,11 @@
         <button id="btn-delete" class="danger">Delete</button>
       </div>
       <canvas id="map" width="700" height="420"></canvas>
+      <div class="row maphint">
+        <span class="muted small">Scroll to zoom, drag to move, double-click to fit the whole stage.</span>
+        <span id="map-zoom" class="muted small"></span>
+        <button id="btn-map-reset">Fit</button>
+      </div>
       <div class="legend">
         <span class="sw c1"></span>1 <span class="sw c2"></span>2 <span class="sw c3"></span>3
         <span class="sw c4"></span>4 <span class="sw c5"></span>5 <span class="sw c6"></span>6
@@ -153,7 +158,7 @@
 <section id="tab-config" class="tab">
   <div class="row cfg-top">
     <input id="config-search" placeholder="search settings…">
-    <span class="muted">Changes apply within half a second, even while driving. A blue dot means you changed it; <b>reset</b> restores the default. <span class="badge">rebuild</span> marks values that only act when you build or learn a stage; <span class="badge restart">restart</span> marks values that only act the next time you start the co-driver.</span>
+    <span class="muted">Changes apply within half a second, even while driving. A blue dot means you changed it; <b>reset</b> restores the default. <span class="badge">rebuild</span> marks values that only act when you build or learn a stage; <span class="badge restart">stop + start</span> marks values the co-driver reads only when it starts: press <b>Stop</b>, then <b>Start</b> on the Drive tab. You never need to close the program for a setting.</span>
   </div>
   <div id="config-form"></div>
 </section>

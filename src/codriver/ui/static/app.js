@@ -199,7 +199,7 @@ function onRun(e) {
     $("#hud-next").textContent = `${e.stage} · waiting for telemetry on ${e.port}`;
     $("#hud-sub").textContent = e.voice
       ? `voice: ${e.voice}`
-      : "no voice pack loaded, you will hear beeps. Generate one on the Voice tab and pick it under Config, then restart the co-driver.";
+      : "no voice pack loaded, you will hear beeps. Generate one on the Voice tab and pick it under Config, then press Stop and Start on the Drive tab.";
   }
   if (e.kind === "localised") { $("#hud-sub").textContent = `localised at ${fmtKm(e.along_m)} km (${e.off_m.toFixed(1)} m off line)`; }
   if (e.kind === "suspended") { $("#hud-state").textContent = "suspended"; $("#hud-sub").textContent = "stream stopped (pause / rewind / finish?)"; }
@@ -252,37 +252,123 @@ $("#btn-share").onclick = async () => {
       `It appears in the Community list once it is merged. Thank you!`;
   } catch (x) { $("#stage-out").textContent = "error: " + x.message; }
 };
-$("#btn-delete").onclick = async () => { if (!confirm(`delete stage ${currentStage}?`)) return; await api(`/api/stages/${currentStage}`, "DELETE"); currentStage = null; $("#stage-actions").hidden = true; $("#stage-title").textContent = "no stage selected"; $("#stage-notes").innerHTML = ""; const c = $("#map"); c.getContext("2d").clearRect(0, 0, c.width, c.height); refreshState(); };
+$("#btn-delete").onclick = async () => { if (!confirm(`delete stage ${currentStage}?`)) return; await api(`/api/stages/${currentStage}`, "DELETE"); currentStage = null; $("#stage-actions").hidden = true; $("#stage-title").textContent = "no stage selected"; $("#stage-notes").innerHTML = ""; MAP_STAGE = null; drawMap(); refreshState(); };
 
 const CLASS_COLOUR = { 1: "#ff3b30", 2: "#ff7a1a", 3: "#ffcc00", 4: "#4cd964", 5: "#2fb3ff", 6: "#8e6bff", S: "#a0a0a8" };
+// Stage map. Wheel (or pinch) zooms around the cursor, drag pans,
+// double-click or the Fit button shows the whole stage again.
+let MAP_STAGE = null;
+const MAP_VIEW = { zoom: 1, tx: 0, ty: 0 };
+function resetMapView() { MAP_VIEW.zoom = 1; MAP_VIEW.tx = 0; MAP_VIEW.ty = 0; }
+function zoomMapAt(cx, cy, k) {
+  const z = Math.min(80, Math.max(1, MAP_VIEW.zoom * k));
+  k = z / MAP_VIEW.zoom;
+  MAP_VIEW.tx = cx - (cx - MAP_VIEW.tx) * k;
+  MAP_VIEW.ty = cy - (cy - MAP_VIEW.ty) * k;
+  MAP_VIEW.zoom = z;
+  if (z === 1) resetMapView();
+}
+
 function drawMap(st) {
-  const c = $("#map"), ctx = c.getContext("2d");
-  const W = c.width = c.clientWidth * devicePixelRatio, H = c.height = Math.round(c.clientWidth * 0.6) * devicePixelRatio;
+  if (st) { if (st !== MAP_STAGE) resetMapView(); MAP_STAGE = st; }
+  st = MAP_STAGE;
+  const c = $("#map"), ctx = c.getContext("2d"), dpr = devicePixelRatio;
+  const W = c.width = c.clientWidth * dpr, H = c.height = Math.round(c.clientWidth * 0.6) * dpr;
   ctx.clearRect(0, 0, W, H);
-  if (!st.line.length) return;
+  $("#map-zoom").textContent = "";
+  if (!st || !st.line.length) return;
   const xs = st.line.map((p) => p[0]), zs = st.line.map((p) => p[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
-  const pad = 24 * devicePixelRatio;
-  const scale = Math.min((W - 2 * pad) / Math.max(1, maxX - minX), (H - 2 * pad) / Math.max(1, maxZ - minZ));
-  const X = (x) => pad + (x - minX) * scale, Y = (z) => H - pad - (z - minZ) * scale;  // z up = north
-  ctx.lineWidth = 4 * devicePixelRatio; ctx.lineCap = "round";
+  const pad = 24 * dpr;
+  const fit = Math.min((W - 2 * pad) / Math.max(1, maxX - minX), (H - 2 * pad) / Math.max(1, maxZ - minZ));
+  const { zoom, tx, ty } = MAP_VIEW;
+  const X = (x) => (pad + (x - minX) * fit) * zoom + tx, Y = (z) => (H - pad - (z - minZ) * fit) * zoom + ty;  // z up = north
+  ctx.lineWidth = 4 * dpr; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  // One path per run of equal colour, not one per segment: this redraws on
+  // every drag move and a stage is a few thousand segments.
+  let colour = null;
   for (let i = 1; i < st.line.length; i++) {
     const label = st.markings[i] || "S";
-    ctx.strokeStyle = CLASS_COLOUR[label === "S" ? "S" : label.slice(1)] || "#888";
-    ctx.beginPath(); ctx.moveTo(X(st.line[i - 1][0]), Y(st.line[i - 1][1])); ctx.lineTo(X(st.line[i][0]), Y(st.line[i][1])); ctx.stroke();
+    const next = CLASS_COLOUR[label === "S" ? "S" : label.slice(1)] || "#888";
+    if (next !== colour) {
+      if (colour) ctx.stroke();
+      colour = next; ctx.strokeStyle = colour;
+      ctx.beginPath(); ctx.moveTo(X(st.line[i - 1][0]), Y(st.line[i - 1][1]));
+    }
+    ctx.lineTo(X(st.line[i][0]), Y(st.line[i][1]));
   }
+  if (colour) ctx.stroke();
   // start marker
-  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(xs[0]), Y(zs[0]), 6 * devicePixelRatio, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(X(xs[0]), Y(zs[0]), 6 * dpr, 0, 7); ctx.fill();
   // notes
-  ctx.font = `${11 * devicePixelRatio}px system-ui, sans-serif`;
+  ctx.font = `${11 * dpr}px system-ui, sans-serif`;
   st.notes.forEach((n) => {
     const p = st.line[Math.min(n.index, st.line.length - 1)];
+    const x = X(p[0]), y = Y(p[1]);
+    if (x < -200 || y < -50 || x > W + 50 || y > H + 50) return;  // off screen while zoomed
     ctx.fillStyle = n.kind === "corner" ? "#ffffff" : n.kind === "water" ? "#2fb3ff" : "#ffd60a";
-    ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.5 * devicePixelRatio, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 3.5 * dpr, 0, 7); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,.85)";
-    ctx.fillText(n.text, X(p[0]) + 6 * devicePixelRatio, Y(p[1]) - 4 * devicePixelRatio);
+    ctx.fillText(n.text, x + 6 * dpr, y - 4 * dpr);
   });
+  if (zoom > 1.01) $("#map-zoom").textContent = `${zoom.toFixed(1)}×`;
 }
+
+(function wireMap() {
+  const c = $("#map");
+  const ptrs = new Map();
+  let drag = null, pinch = null, raf = 0;
+  const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawMap(); }); };
+  const canvasPoint = (clientX, clientY) => {
+    const r = c.getBoundingClientRect();
+    return [(clientX - r.left) * devicePixelRatio, (clientY - r.top) * devicePixelRatio];
+  };
+  c.addEventListener("wheel", (e) => {
+    if (!MAP_STAGE) return;
+    e.preventDefault();
+    const [cx, cy] = canvasPoint(e.clientX, e.clientY);
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;  // Firefox reports lines, not pixels
+    zoomMapAt(cx, cy, Math.exp(-dy * 0.0015));
+    redraw();
+  }, { passive: false });
+  c.addEventListener("pointerdown", (e) => {
+    if (!MAP_STAGE) return;
+    c.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, tx: MAP_VIEW.tx, ty: MAP_VIEW.ty }; c.classList.add("dragging"); }
+    else { drag = null; pinch = null; }
+  });
+  c.addEventListener("pointermove", (e) => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+      if (pinch) {
+        const [cx, cy] = canvasPoint(mid[0], mid[1]);
+        zoomMapAt(cx, cy, d / pinch.d);
+        MAP_VIEW.tx += (mid[0] - pinch.mid[0]) * devicePixelRatio;
+        MAP_VIEW.ty += (mid[1] - pinch.mid[1]) * devicePixelRatio;
+      }
+      pinch = { d, mid };
+      redraw();
+    } else if (drag) {
+      MAP_VIEW.tx = drag.tx + (e.clientX - drag.x) * devicePixelRatio;
+      MAP_VIEW.ty = drag.ty + (e.clientY - drag.y) * devicePixelRatio;
+      redraw();
+    }
+  });
+  const release = (e) => {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 0) { drag = null; pinch = null; c.classList.remove("dragging"); }
+    else if (ptrs.size === 1) { const [[x, y]] = ptrs.values(); drag = { x, y, tx: MAP_VIEW.tx, ty: MAP_VIEW.ty }; pinch = null; }
+  };
+  c.addEventListener("pointerup", release);
+  c.addEventListener("pointercancel", release);
+  c.addEventListener("dblclick", () => { resetMapView(); drawMap(); });
+  $("#btn-map-reset").onclick = () => { resetMapView(); drawMap(); };
+  addEventListener("resize", () => { if (MAP_STAGE) drawMap(); });
+})();
 
 // ---------------------------------------------------------------- config
 let CONFIG_FIELDS = [];
@@ -344,7 +430,7 @@ function renderField(f) {
   }
   const badge =
     (f.needs_rebuild ? `<span class="badge" title="takes effect when you build or learn a stage">rebuild</span>` : "") +
-    (f.needs_restart ? `<span class="badge restart" title="takes effect the next time you start the co-driver (Stop, then Start)">restart</span>` : "");
+    (f.needs_restart ? `<span class="badge restart" title="read only when the co-driver starts: press Stop, then Start on the Drive tab. No need to close the program.">stop + start</span>` : "");
   row.innerHTML =
     `<div class="cfg-key"><span class="dot"></span>${f.label}${badge}<div class="cfg-keyname">${f.key}</div></div>` +
     `<div class="cfg-input">${input}<button class="reset" data-key="${f.key}" title="back to default (${esc(f.default)})">reset</button></div>` +
@@ -388,7 +474,7 @@ function onVoice(e) {
     log(out, `done: ${e.clips} clips, ${e.seconds.toFixed(1)} s of audio, voice ${e.voice}.`);
     log(out, e.selected
       ? `'${e.name}' is now the active voice. If the co-driver is running, stop and start it again.`
-      : `to use it, pick '${e.name}' under Config, Voice, then restart the co-driver.`);
+      : `to use it, pick '${e.name}' under Config, Voice, then press Stop and Start on the Drive tab.`);
     refreshState();
   }
   if (e.kind === "error") log(out, "error: " + e.message);

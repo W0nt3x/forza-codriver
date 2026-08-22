@@ -42,7 +42,10 @@ pre.log:empty { display: none; }
 .list li { padding: 8px; border-radius: 8px; cursor: pointer; }
 .list li:hover, .list li.sel { background: #202531; }
 .tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
-#map { width: 100%; height: auto; background: #0b0d11; border-radius: 8px; display: block; }
+#map { width: 100%; height: auto; background: #0b0d11; border-radius: 8px; display: block; cursor: grab; touch-action: none; }
+#map.dragging { cursor: grabbing; }
+.maphint { justify-content: flex-end; margin-top: 6px; }
+.maphint button { padding: 2px 10px; font-size: 12px; }
 .legend { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .sw { display: inline-block; width: 14px; height: 8px; border-radius: 2px; margin: 0 3px 0 10px; vertical-align: middle; }
 .c1 { background: #ff3b30 } .c2 { background: #ff7a1a } .c3 { background: #ffcc00 } .c4 { background: #4cd964 } .c5 { background: #2fb3ff } .c6 { background: #8e6bff } .cs { background: #a0a0a8 }

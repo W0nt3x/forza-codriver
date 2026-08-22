@@ -289,6 +289,23 @@ def test_restart_badge_marks_what_is_read_only_at_start(client):
     assert by_key["runtime.trigger.reaction_buffer_s"]["needs_restart"] is False
     assert by_key["audio.crossfade_ms"]["needs_restart"] is False
     assert by_key["stage.curvature.window_points"]["needs_restart"] is False
+    assert by_key["logging.level"]["needs_restart"] is False, "applied live by the server"
+
+
+def test_logging_level_applies_without_closing_the_program(client):
+    """Nothing in the config should ever need the program closed. Logging was
+    the one value read only at process start; the server now applies it."""
+    import logging
+
+    c, _, _ = client
+    before = logging.getLogger().level
+    try:
+        c.put("/api/config", json={"key": "logging.level", "value": "DEBUG"})
+        assert logging.getLogger().level == logging.DEBUG
+        c.delete("/api/config/logging.level")
+        assert logging.getLogger().level == logging.INFO
+    finally:
+        logging.getLogger().setLevel(before)
 
 
 def test_state_names_the_words_a_voice_pack_is_missing(client):

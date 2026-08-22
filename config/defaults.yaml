@@ -234,7 +234,8 @@ runtime:
 audio:
   # Name of the voice pack to use, from the voices folder. "default" is what
   # Generate creates for English, "de" for German. Without a pack you hear
-  # placeholder beeps. Changing this needs a restart of the co-driver.
+  # placeholder beeps. Read when the co-driver starts: after changing it,
+  # press Stop and then Start on the Drive tab.
   voice_pack: "default"
   # Folder where voice packs live.
   voices_dir: "voices"

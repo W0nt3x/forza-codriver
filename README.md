@@ -7,8 +7,8 @@ three"*. English or German.
 > **Status: early beta, work in progress.** It works, and I drive with it
 > most evenings, but it is young software built by one person and tuned on a
 > handful of stages. Expect rough edges: a corner called a touch early or
-> late, a setting that wants a restart, a stage that needs a rebuild after an
-> update. If something breaks,
+> late, a setting that only kicks in after Stop and Start, a stage that needs
+> a rebuild after an update. If something breaks,
 > [open an issue](https://github.com/W0nt3x/codriver-for-forza-horizon-6/issues)
 > and say what you did; recordings make almost everything reproducible.
 
@@ -190,7 +190,10 @@ Everything adjustable is on the **Config** tab, each value with a plain
 explanation next to it. Changes are saved to `config/local.yaml` and apply
 within half a second, even while driving. Values under *stage* act when you
 build or learn a stage (so rebuild afterwards); *runtime* and *audio* act
-live.
+live, except a few the co-driver reads only when it starts (the voice pack,
+the audio device, the telemetry port). The Config tab marks those; for them,
+press **Stop** and then **Start** on the Drive tab. You never need to close
+the program for a setting.
 
 The three worth touching first:
 
@@ -248,9 +251,6 @@ Rough order, no dates. Things move when I get to drive enough to test them.
 - **Learn, properly.** Several drives already smooth the line and record your
   speeds; next is letting them move the calls themselves, so a corner you
   always brake harder for than its number says gets the tighter number.
-- **Other games.** Forza lives in one module by design. DiRT Rally 2.0,
-  EA WRC and Assetto Corsa Rally all send UDP telemetry; adapters for them
-  should touch nothing else.
 - **Easier install.** A single download that needs no Python step at all.
 - **Community.** Ratings for shared stages and automatic checks on uploads.
 

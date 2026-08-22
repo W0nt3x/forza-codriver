@@ -93,7 +93,7 @@ UNITS = {"s": "seconds", "ms": "ms", "m": "metres", "kmh": "km/h", "db": "dB",
 # Read once when the co-driver (or a recording) starts, not while it runs.
 # Everything else under runtime/audio is picked up live by the hot reload.
 RESTART_PREFIXES = (
-    "telemetry.", "capture.", "replay.", "logging.", "runtime.record.",
+    "telemetry.", "capture.", "replay.", "runtime.record.",
     "audio.voice_pack", "audio.voices_dir", "audio.samplerate", "audio.channels",
     "audio.blocksize", "audio.device", "audio.gain_db",
 )
@@ -205,6 +205,19 @@ def config_schema(
 
 
 _MISSING = object()
+
+
+def _apply_live(cfg: Config) -> None:
+    """Settings the process itself holds. Re-read after a config change so
+    they act now, not at the next program start. Nothing in the config should
+    ever require closing the program; Stop and Start on the Drive tab is the
+    most anyone has to do."""
+    import logging as _logging
+
+    try:
+        _logging.getLogger().setLevel(str(cfg.get("logging.level")).upper())
+    except (KeyError, ValueError):
+        pass
 
 
 def _voice_gaps(voices_dir: Path) -> dict[str, list[str]]:
@@ -651,12 +664,14 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             value = None  # the Windows default output
         _set_local(cfg.local_path, key, value)
         cfg.poll(immediate=True)
+        _apply_live(cfg)
         return {"ok": True, "key": key, "value": cfg.get(key)}
 
     @app.delete("/api/config/{key:path}")
     async def config_delete(key: str) -> dict:
         _unset_local(cfg.local_path, key)
         cfg.poll(immediate=True)
+        _apply_live(cfg)
         return {"ok": True, "key": key, "value": cfg.get(key, None)}
 
     # -- voice ---------------------------------------------------------------
