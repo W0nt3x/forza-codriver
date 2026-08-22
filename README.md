@@ -26,8 +26,9 @@ So this is the missing seat. It doesn't touch the game at all: Forza has an
 official setting called Data Out that broadcasts its telemetry (position,
 speed, suspension...) to whatever's listening, and codriver just listens. It
 remembers where the road goes from a lap you drove earlier and speaks the
-corners before you get there. The game never knows it's running, which also
-means there's nothing here that could get an account banned.
+corners before you get there. It uses nothing but that official Data Out
+feature, the same category of tool as SimHub or a motion rig: no game files
+touched, no memory read, nothing injected.
 
 Most of it was tuned by driving the same two stages over and over, changing a
 number, driving again. So everything you can tune takes effect while you're
@@ -189,7 +190,7 @@ tab shows a QR code instead: scan it with a phone on the same WLAN, prop the
 phone next to your wheel, done. It shows the next call in large type, the
 distance to it, and a log of what was said. Audio still comes from the PC.
 
-Nothing leaves your WLAN and there's no account anywhere. If you'd rather
+The HUD itself never leaves your WLAN and needs no account. If you'd rather
 the UI weren't reachable from other devices at all, start with
 `start.bat --local-only`.
 
@@ -231,9 +232,13 @@ instead of the config.
 English (`en-GB-RyanNeural`, a British male) or German (`de-DE-ConradNeural`,
 the "hundert, links, zieht zu, eins" one). Other voices work too, from the
 terminal: `python -m codriver voice generate --lang de --voice
-de-DE-KatjaNeural`. There's also an offline engine (`--engine sapi`) that
-uses the voices built into Windows and needs no internet. It sounds like it,
-but it works.
+de-DE-KatjaNeural`. Honest footnote: these come through the unofficial
+`edge-tts` package, which talks to the endpoint Microsoft's Edge browser uses
+for read-aloud. It has worked for years, but it is not an API Microsoft
+promises to anyone, and it has broken for a few weeks now and then. If that
+door ever closes, the offline engine (`--engine sapi`) keeps working: it uses
+the voices built into Windows and needs no internet. It sounds like it, but it
+works, and a pack you already generated is yours for good either way.
 
 Packs are plain folders under `voices/` with a `manifest.yaml` and one WAV
 per word. Record your own voice, or your friend's, drop the files in, set
@@ -320,4 +325,5 @@ which is worth reading even if you never use this tool. Ideas about how a
 pace-note tool should feel came from
 [PacenotePal](https://github.com/Koenvh1/PacenotePal) and the community
 co-driver packs for Richard Burns Rally. Voices are generated with
-Microsoft's neural text-to-speech.
+Microsoft's neural text-to-speech voices, reached through the unofficial
+`edge-tts` package (see Voices above for what that means).
