@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from ..stage.schema import safe_stem
 from ..adapters import get_adapter
 from ..adapters.base import PacketError
 from ..config import Config
@@ -167,7 +168,7 @@ def run_stage(
     if record_dir is not None:
         stamp = time.strftime("%Y%m%d_%H%M%S")
         recorder = CaptureWriter(
-            Path(record_dir) / f"{stage.name}_{stamp}.fzr",
+            Path(record_dir) / f"{safe_stem(stage.name)}_{stamp}.fzr",
             header={
                 "adapter": cfg.get("telemetry.adapter"),
                 "stage": stage.name,

@@ -451,3 +451,50 @@ def test_share_goes_through_the_relay_and_falls_back_to_the_upload_page(client, 
     body = c.post("/api/stages/coast-road-sprint/share", json={"author": "nils"}).json()
     assert body["via"] == "manual" and "no notes" in body["relay_error"]
 
+
+def test_a_stage_name_in_a_request_cannot_leave_the_stages_folder(client):
+    """Windows accepts backslashes as separators, and a path parameter lets
+    them through. Every endpoint that turns a name into stages/<name>.json
+    must refuse anything that is not a plain name. (Encoded slashes never
+    reach the handler, they fail routing; that is a refusal too.)"""
+    c, root, cfg = client
+    victim = root / "victim.json"
+    victim.write_text("{}", encoding="utf-8")
+    refused = (400, 404, 405)
+    for name in ("..\\victim", "..%5Cvictim", "..%2F..%2Fvictim", "C:\\x"):
+        assert c.delete(f"/api/stages/{name}").status_code in refused, name
+        assert c.get(f"/api/stages/{name}").status_code in refused, name
+        assert c.post(f"/api/stages/{name}/share", json={}).status_code in refused, name
+        assert c.post(f"/api/stages/{name}/learn").status_code in refused, name
+    assert c.post("/api/run", json={"stage": "..\\victim"}).status_code == 400
+    assert c.delete("/api/stages/..%5Cvictim").status_code == 400, "a backslash is a separator here"
+    assert victim.is_file(), "nothing outside stages/ was touched"
+
+
+def test_an_installed_stage_is_named_after_its_file_not_its_contents(client):
+    """The JSON inside a shared file can say any name it likes. The file
+    name was validated; the inner name was not, and it ends up in run
+    recording file names. So the file name wins."""
+    import json as _json
+
+    from codriver.stage.schema import load
+
+    c, root, cfg = client
+    fetch = _shared_stage_fetch(root)
+    raw = _json.loads(fetch("https://x/stages/coast-road-sprint.json"))
+    raw["name"] = "../../../evil"
+    c.app.state.fetch = _fake_fetch({
+        "/index.json": fetch("https://x/index.json"),
+        "/stages/coast-road-sprint.json": _json.dumps(raw).encode(),
+    })
+    assert c.post("/api/community/install", json={"file": "coast-road-sprint.json"}).status_code == 200
+    assert load(root / "stages" / "coast-road-sprint.json").name == "coast-road-sprint"
+    assert c.get("/api/state").json()["stages"][0]["name"] == "coast-road-sprint"
+
+
+def test_voice_pack_name_cannot_be_a_path(client):
+    c, root, cfg = client
+    for bad in ("../x", "a/b", "a\\b", "..", "Sp ace"):
+        r = c.post("/api/voice/generate", json={"lang": "en", "name": bad})
+        assert r.status_code == 400, (bad, r.text)
+

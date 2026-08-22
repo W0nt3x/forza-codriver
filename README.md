@@ -167,6 +167,11 @@ that holds nothing but stage files and needs no account to read.
 
 Click a community stage to see its map and notes before you install it.
 
+A stage file is data, not a program: numbers for the line, words for the
+notes, a name. Nothing in it is ever executed. The app shows its text as
+text, and a name is checked before it can become a file name, so the worst a
+bad file can do is describe a bad stage, which you would see on the map.
+
 Built a good one yourself? Press **Share** on the stage. codriver writes a
 clean copy (the line, the notes, the speeds you drove; no personal data and no
 recording) into `stages/share/` and hands it to the community relay, a tiny

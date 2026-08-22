@@ -246,3 +246,24 @@ def test_learn_keeps_the_jumps_and_water_the_geometry_cannot_see(tmp_path, cfg):
     save(stage, tmp_path / "h.json")
     learned, _ = learn_stage(load(tmp_path / "h.json"), cfg, [])
     assert {"jump", "water"} <= kinds(learned)
+
+
+def test_run_recordings_and_learn_agree_on_a_safe_file_name(tmp_path):
+    """A hand-edited or downloaded stage can carry any name. The recorder
+    reduces it to a safe stem, and Learn looks for runs under the same stem,
+    so the two never disagree and no name can point outside the runs folder."""
+    from codriver.stage.schema import Stage, safe_stem
+
+    assert safe_stem("stage2") == "stage2"
+    assert safe_stem("coast-road-sprint") == "coast-road-sprint"
+    assert safe_stem("../../evil") == "evil"
+    assert safe_stem("C:\\Users\\x") == "C-Users-x"
+    assert safe_stem("Coast Road Sprint") == "Coast-Road-Sprint"
+    assert safe_stem("...") == "stage"
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "evil_20260101_000000.fzr").write_bytes(b"")
+    st = Stage(name="../../evil")
+    assert [p.name for p in runs_for_stage(st, runs)] == ["evil_20260101_000000.fzr"]
+

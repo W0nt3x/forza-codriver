@@ -319,6 +319,20 @@ def _coerce(value: Any, kind: str) -> Any:
 
 
 _SAFE_FILE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}\.json$")
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}$")
+_SAFE_PACK = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,40}$")
+
+
+def _stage_path(stages_dir: Path, name: object):
+    """``stages/<name>.json`` for a name that cannot leave ``stages/``.
+
+    The name comes from a URL or a request body, so anything with a
+    separator (either kind, this is Windows), a drive letter or ``..`` is
+    refused before it touches the filesystem."""
+    text = str(name or "")
+    if not _SAFE_NAME.match(text) or ".." in text:
+        raise HTTPException(400, f"not a stage name: {text!r}")
+    return stages_dir / f"{text}.json"
 """Community stage file names: lowercase slug plus .json, nothing that could
 climb out of the stages folder."""
 
@@ -395,7 +409,7 @@ def _stage_summary(path: Path) -> dict | None:
     except (StageError, OSError, ValueError):
         return None
     return {
-        "name": st.name,
+        "name": path.stem,
         "file": path.name,
         "length_m": st.length_m,
         "notes": len(st.notes),
@@ -571,7 +585,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..stage.schema import load
 
         name = body.get("stage")
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         stage = load(path)
@@ -609,7 +623,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..stage.schema import load
         from ..stage.learn import runs_for_stage
 
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         st = load(path)
@@ -617,7 +631,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
     @app.delete("/api/stages/{name}")
     async def stage_delete(name: str) -> dict:
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         path.unlink()
@@ -628,7 +642,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..stage.build import build_stage
         from ..stage.schema import load, save
 
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         st = load(path)
@@ -646,7 +660,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..stage.learn import learn_stage, runs_for_stage
         from ..stage.schema import load, save
 
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         st = load(path)
@@ -709,7 +723,9 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..voice.generate import generate_pack
 
         lang = body.get("lang", "en")
-        name = body.get("name") or ("default" if lang == "en" else lang)
+        name = str(body.get("name") or ("default" if lang == "en" else lang)).strip().lower()
+        if not _SAFE_PACK.match(name):
+            raise HTTPException(400, "pack name: lowercase letters, digits, - and _, nothing else")
         engine = body.get("engine", "edge")
         voice = body.get("voice") or None
 
@@ -852,6 +868,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         if dest.exists() and not body.get("overwrite"):
             raise HTTPException(409, f"you already have a stage named {file[:-5]}")
         stage.generator = {**stage.generator, "installed_from": f"{repo}/stages/{file}"}
+        stage.name = file[:-5]  # the file name is the name, whatever the JSON said inside
         save(stage, dest)
         return {"ok": True, "name": stage.name, "file": file}
 
@@ -861,7 +878,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
         from ..stage.schema import load, to_dict
 
-        path = stages_dir / f"{name}.json"
+        path = _stage_path(stages_dir, name)
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         target = _community()

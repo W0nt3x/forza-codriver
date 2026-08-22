@@ -1,6 +1,10 @@
 /* codriver UI, vanilla JS, one WebSocket, a handful of fetches. */
 
 const $ = (sel) => document.querySelector(sel);
+// Anything that came from a file or from the network is text, never markup:
+// stage names, note words, author names. Every innerHTML template goes
+// through this.
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 const api = async (path, method = "GET", body) => {
   const res = await fetch(path, {
     method,
@@ -45,35 +49,35 @@ async function refreshState() {
   setJobPill(STATE.job);
 
   const recSel = $("#build-recording");
-  recSel.innerHTML = STATE.recordings.map((r) => `<option>${r.file}</option>`).join("") || "<option disabled>no recordings yet</option>";
+  recSel.innerHTML = STATE.recordings.map((r) => `<option>${esc(r.file)}</option>`).join("") || "<option disabled>no recordings yet</option>";
 
-  const stageOpts = STATE.stages.map((s) => `<option value="${s.name}">${s.name} · ${fmtKm(s.length_m)} km · ${s.notes} notes</option>`).join("");
+  const stageOpts = STATE.stages.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${fmtKm(s.length_m)} km · ${s.notes} notes</option>`).join("");
   $("#drive-stage").innerHTML = stageOpts || "<option disabled>build a stage first</option>";
 
   $("#stage-list").innerHTML = STATE.stages.map((s) =>
-    `<li data-name="${s.name}" class="${currentStage === s.name ? "sel" : ""}">
-       <b>${s.name}</b><span class="muted"> ${fmtKm(s.length_m)} km · ${s.notes} notes · ${s.learned_runs} runs learned</span></li>`).join("")
+    `<li data-name="${esc(s.name)}" class="${currentStage === s.name ? "sel" : ""}">
+       <b>${esc(s.name)}</b><span class="muted"> ${fmtKm(s.length_m)} km · ${s.notes} notes · ${s.learned_runs} runs learned</span></li>`).join("")
     || "<li class='muted'>none yet, record and build on the Setup tab</li>";
   document.querySelectorAll("#stage-list li[data-name]").forEach((li) =>
     li.addEventListener("click", () => showStage(li.dataset.name)));
 
   const gaps = STATE.voice_gaps || {};
   const gapBadge = (v) => gaps[v]
-    ? ` <span class="badge" title="words added since this pack was generated; they play as beeps until you generate the pack again">missing: ${gaps[v].join(", ")}</span>`
+    ? ` <span class="badge" title="words added since this pack was generated; they play as beeps until you generate the pack again">missing: ${esc(gaps[v].join(", "))}</span>`
     : "";
-  const voices = STATE.voices.map((v) => `<li><b>${v}</b>${v === STATE.voice_pack ? ' <span class="tag">active</span>' : ""}${gapBadge(v)}</li>`).join("");
+  const voices = STATE.voices.map((v) => `<li><b>${esc(v)}</b>${v === STATE.voice_pack ? ' <span class="tag">active</span>' : ""}${gapBadge(v)}</li>`).join("");
   $("#voice-list").innerHTML = voices || "<li class='muted'>no voice pack yet, generate one</li>";
-  $("#say-pack").innerHTML = STATE.voices.map((v) => `<option ${v === STATE.voice_pack ? "selected" : ""}>${v}</option>`).join("");
+  $("#say-pack").innerHTML = STATE.voices.map((v) => `<option ${v === STATE.voice_pack ? "selected" : ""}>${esc(v)}</option>`).join("");
 
   // Voice state, shown where people actually look: Setup and Drive.
   const voiceOk = STATE.voices.includes(STATE.voice_pack);
   const activeGaps = voiceOk ? gaps[STATE.voice_pack] : null;
   $("#voice-setup-text").innerHTML = voiceOk
     ? (activeGaps
-        ? `Active voice: <b>${STATE.voice_pack}</b>, but it is missing words added since it was generated (<b>${activeGaps.join(", ")}</b>), which play as beeps. Generate it again on the Voice tab, same language, same name, about 20 seconds.`
-        : `Active voice: <b>${STATE.voice_pack}</b>. Done. More voices and a test button are on the Voice tab.`)
+        ? `Active voice: <b>${esc(STATE.voice_pack)}</b>, but it is missing words added since it was generated (<b>${esc(activeGaps.join(", "))}</b>), which play as beeps. Generate it again on the Voice tab, same language, same name, about 20 seconds.`
+        : `Active voice: <b>${esc(STATE.voice_pack)}</b>. Done. More voices and a test button are on the Voice tab.`)
     : (STATE.voices.length
-        ? `You have a voice pack (${STATE.voices.join(", ")}) but <b>${STATE.voice_pack}</b> is selected and does not exist. Pick one under Config, Voice.`
+        ? `You have a voice pack (${esc(STATE.voices.join(", "))}) but <b>${esc(STATE.voice_pack)}</b> is selected and does not exist. Pick one under Config, Voice.`
         : `<b>No voice yet.</b> Right now the co-driver would only beep. Generate one:`);
   $("#voice-setup-actions").hidden = voiceOk;
   $("#drive-voice-warn").hidden = voiceOk;
@@ -96,9 +100,9 @@ async function loadCommunity() {
   }
   text.innerHTML = `Stages shared by other players, from <a href="${COMMUNITY.url}" target="_blank" rel="noopener">${COMMUNITY.repo}</a>. Click one to preview it, Install to drive it. Share your own with the Share button on your stage.`;
   list.innerHTML = COMMUNITY.stages.map((s) =>
-    `<li data-file="${s.file}" class="${currentCommunity === s.file ? "sel" : ""}">
-       <div class="li-main"><b>${s.name}</b><span class="muted"> ${fmtKm(s.length_m || 0)} km · ${s.notes || 0} notes${s.author ? " · by " + s.author : ""}</span></div>
-       <button class="small-btn" data-install="${s.file}" ${s.installed ? "disabled" : ""}>${s.installed ? "installed" : "Install"}</button></li>`).join("")
+    `<li data-file="${esc(s.file)}" class="${currentCommunity === s.file ? "sel" : ""}">
+       <div class="li-main"><b>${esc(s.name)}</b><span class="muted"> ${fmtKm(s.length_m || 0)} km · ${s.notes || 0} notes${s.author ? " · by " + esc(s.author) : ""}</span></div>
+       <button class="small-btn" data-install="${esc(s.file)}" ${s.installed ? "disabled" : ""}>${s.installed ? "installed" : "Install"}</button></li>`).join("")
     || "<li class='muted'>nothing shared yet. Be the first: build a stage and press Share.</li>";
   list.querySelectorAll("li[data-file]").forEach((li) =>
     li.addEventListener("click", (e) => { if (e.target.closest("button")) return; showCommunityStage(li.dataset.file); }));
@@ -145,7 +149,7 @@ async function showCommunityStage(file) {
 
 function renderNotes(st) {
   $("#stage-notes").innerHTML = st.notes.map((n) =>
-    `<tr><td>${fmtKm(n.at_m)}</td><td><b>${n.text}</b></td><td class="muted">${n.radius_m ? "r=" + n.radius_m.toFixed(0) + " m" : n.kind}${n.observed_kmh ? " · ~" + n.observed_kmh + " km/h" : ""}</td></tr>`).join("");
+    `<tr><td>${fmtKm(n.at_m)}</td><td><b>${esc(n.text)}</b></td><td class="muted">${n.radius_m ? "r=" + n.radius_m.toFixed(0) + " m" : esc(n.kind)}${n.observed_kmh ? " · ~" + n.observed_kmh + " km/h" : ""}</td></tr>`).join("");
 }
 
 function setJobPill(job) {
@@ -256,7 +260,7 @@ function onRun(e) {
   }
   if (e.kind === "note") {
     const li = document.createElement("li");
-    li.innerHTML = `<b>${e.text}</b> <span class="muted">${fmtKm(e.at_m)} km · lead ${e.lead_m.toFixed(0)} m · ${e.duration_s.toFixed(2)} s</span>`;
+    li.innerHTML = `<b>${esc(e.text)}</b> <span class="muted">${fmtKm(e.at_m)} km · lead ${e.lead_m.toFixed(0)} m · ${e.duration_s.toFixed(2)} s</span>`;
     $("#calls").prepend(li);
     $("#hud-next").classList.add("flash"); setTimeout(() => $("#hud-next").classList.remove("flash"), 400);
   }
@@ -287,7 +291,6 @@ $("#btn-share").onclick = async () => {
   $("#stage-out").textContent = "preparing…";
   try {
     const r = await api(`/api/stages/${currentStage}/share`, "POST", { author });
-    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
     if (r.via === "relay") {
       $("#stage-out").innerHTML =
         `Shared. Pull request: <a href="${esc(r.pr_url)}" target="_blank" rel="noopener">${esc(r.pr_url)}</a>\n\n` +

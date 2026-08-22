@@ -30,6 +30,19 @@ STAGE_FORMAT = "codriver-stage"
 STAGE_VERSION = 1
 
 
+def safe_stem(name: str) -> str:
+    """A stage name reduced to what may appear in a file name.
+
+    A stage file is data from anywhere (a download, a friend, a hand edit),
+    and its ``name`` field goes into the names of run recordings. Letters,
+    digits, underscore and dash survive; everything else, separators and
+    ".." included, becomes a dash. Names the app itself produces are already
+    of this shape, so for them this is the identity."""
+    import re
+
+    return re.sub(r"[^\w\-]+", "-", str(name)).strip("-") or "stage"
+
+
 class StageError(Exception):
     pass
 

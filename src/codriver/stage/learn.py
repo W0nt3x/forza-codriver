@@ -34,7 +34,7 @@ from ..config import Config
 from ..runtime.locate import Locator, StageIndex
 from .build import BuildReport, frames_from_capture, stage_from_line
 from .line import LinePoint, cumulative_distance
-from .schema import Stage
+from .schema import Stage, safe_stem
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +71,7 @@ def runs_for_stage(stage: Stage, runs_dir: Path | str) -> list[Path]:
     runs_dir = Path(runs_dir)
     if not runs_dir.is_dir():
         return []
-    return sorted(runs_dir.glob(f"{stage.name}_*.fzr"))
+    return sorted(runs_dir.glob(f"{safe_stem(stage.name)}_*.fzr"))
 
 
 def _normals(line: Sequence[LinePoint]) -> np.ndarray:
