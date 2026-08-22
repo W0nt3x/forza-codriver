@@ -1,0 +1,252 @@
+# ---------------------------------------------------------------------------
+# codriver settings.
+#
+# You do not need to edit this file. The Config tab in the browser UI shows
+# every value below with its explanation, and saves your changes to
+# config/local.yaml. Changes apply within half a second, even while driving.
+#
+# Values under "stage" only take effect when you build or learn a stage.
+# Values under "runtime" and "audio" take effect live.
+# ---------------------------------------------------------------------------
+
+telemetry:
+  # Which game the telemetry comes from. Only "fh6" exists today.
+  adapter: fh6
+  # Which network address to listen on. "0.0.0.0" means: anything that reaches
+  # this PC. Leave it unless you know why you would change it.
+  bind_host: "0.0.0.0"
+  # The UDP port the game sends telemetry to. Must match the in-game setting
+  # (Settings, HUD and Gameplay, Data Out IP Port). Avoid 5200-5300, the game
+  # uses that range itself, even though many online guides say 5300.
+  port: 5400
+  # Network buffer size in bytes. Bigger means fewer lost packets if the PC is
+  # briefly busy. No need to touch this.
+  socket_rcvbuf_bytes: 1048576
+  # How long to wait for a packet before checking whether the stream stopped,
+  # in seconds.
+  socket_timeout_s: 0.5
+  # Size of one telemetry packet in bytes. Forza Horizon 6 sends 324.
+  expected_packet_size: 324
+
+capture:
+  # Folder where recon recordings are saved.
+  dir: "recordings"
+  # How often a recording is written to disk, in seconds. Lower means less
+  # data lost if the PC crashes mid-drive.
+  flush_interval_s: 2.0
+  # Also record packets from menus and pauses. Keeps everything; filtering
+  # happens later.
+  include_race_off: true
+
+replay:
+  # Where a replay sends the packets. Usually this PC.
+  host: "127.0.0.1"
+  # Port a replay sends to. Same as telemetry.port so the co-driver hears it.
+  port: 5400
+  # Playback speed. 1.0 is real time, 2.0 is twice as fast.
+  speed: 1.0
+  # Start over when the recording ends.
+  loop: false
+  # Shorten long silences (menus, pauses) to this many seconds. Empty keeps
+  # them exactly as recorded.
+  max_gap_s: null
+  # Timing precision of the replay. Leave it.
+  spin_margin_s: 0.0015
+
+# ---------------------------------------------------------------------------
+# Stage building: how a recording becomes pace notes. Rebuild after changes.
+# ---------------------------------------------------------------------------
+stage:
+  line:
+    # A stretch of driving shorter than this many frames is ignored when
+    # picking the recon lap out of a recording.
+    min_segment_frames: 60
+    # Points closer together than this (metres) are merged. Removes the pile
+    # of identical points from standing still.
+    min_step_m: 0.25
+    # Driving slower than this (km/h) at the start and end of the recording is
+    # cut off, so waiting at the line is not part of the stage.
+    trim_below_kmh: 3.6
+
+  resample:
+    # Gaps in the recording longer than this (metres) are filled in first.
+    max_gap_before_subdivide_m: 30.0
+    # Distance between points on the finished stage line, in metres. All the
+    # other "points" settings count in these steps. 3 is a good value.
+    spacing_m: 3.0
+    # Internal step size when laying out the line. Leave it.
+    walk_step_m: 0.25
+
+  curvature:
+    # How far the corner detector looks to each side, in points (11 points is
+    # about 33 metres). Higher smooths out small wobbles from the recon lap
+    # and gives fewer false corners. Lower catches tighter details but calls
+    # more wobbles corners. Try 9 to 13.
+    window_points: 11
+    # Internal threshold for "this is a straight". Leave it.
+    min_divisor: 1.0e-4
+    # The cornering grip the severity numbers are based on, in g. With 0.3 g,
+    # a corner you could take at 40 km/h is a "2". This is only a scale; the
+    # numbers stay the same relative to each other if you change it.
+    comfortable_lateral_g: 0.3
+    # What the severity numbers 1 to 6 mean, as speeds in km/h. A corner is a
+    # "1" if it can be taken up to 30 km/h, a "2" up to 40, and so on. Anything
+    # faster than the last number is not called at all. Lower the last number
+    # and gentle kinks stop being called.
+    class_speed_bands_kmh: [30, 40, 50, 70, 90, 110]
+    # Check left and right against the steering recorded on the recon lap and
+    # flip them if they disagree. Leave on.
+    auto_orient: true
+
+  notes:
+    # When a corner gets tighter within this many points (20 points is about
+    # 60 metres), it is called once, at the start, with the tighter number.
+    # Tighter corners further away get their own call.
+    collapse_window_points: 20
+    # Say "left tightens 3" instead of "3 left" when the corner keeps
+    # tightening for at least this many points after the call (12 points is
+    # about 36 metres).
+    tightens_min_run_points: 12
+    # Only corners this tight or tighter get the "tightens" phrasing.
+    # "tightens 5" is not worth saying.
+    tightens_max_severity: 3
+    # Two corners closer than this (metres) are joined with "into".
+    link_into_max_m: 20.0
+    # Two corners closer than this (metres) are joined with "and".
+    link_and_max_m: 50.0
+    # Most corners that can be joined into one call. Keeps a slalom from
+    # becoming one endless sentence.
+    max_linked_notes: 3
+    # If the next corner is at least this far away (metres), the distance is
+    # said first, like "one hundred, three right".
+    distance_call_min_m: 60.0
+    # The distances the co-driver can say. A gap is rounded down to the
+    # nearest one.
+    distance_buckets_m: [30, 50, 70, 100, 150, 200, 250, 300, 400, 500]
+    # A corner that goes on for at least this many metres is called "long".
+    long_min_m: 120.0
+
+  learn:
+    # Learn only moves a point on the line if at least this many drives went
+    # past it.
+    min_samples_per_point: 2
+    # How much to smooth the learned line, in points. Higher means one odd
+    # moment on one drive changes less.
+    smooth_points: 5
+    # Drives further than this (metres) from the current line at a point are
+    # ignored there. Keeps a cut across a field out of the road.
+    max_shift_m: 6.0
+    # A recorded drive that matched the stage for less than this share of its
+    # frames is not this stage. It is skipped.
+    min_tracked_fraction: 0.5
+
+  hazards:
+    # A jump is when all four wheels are fully extended. Suspension values
+    # below this count as "in the air" (0 is fully extended, 1 is fully
+    # compressed).
+    jump_susp_max_stretch: 0.05
+    # The wheels have to be in the air at least this long (seconds) to count
+    # as a jump, so a bump is not a jump.
+    jump_min_duration_s: 0.15
+    # How steep the road has to rise before a brow to be called a crest.
+    # 0.06 means 6 metres up per 100 metres.
+    crest_gradient: 0.06
+    # How steep the road has to fall into a hollow to be called a dip.
+    dip_gradient: -0.06
+    # Reserved for puddle detection. Not used yet.
+    surface_puddle_min_wheels: 2
+
+# ---------------------------------------------------------------------------
+# Runtime: how the co-driver follows you and times the calls. Takes effect live.
+# ---------------------------------------------------------------------------
+runtime:
+  locate:
+    # How far behind the last known position the co-driver looks for the car,
+    # in points (50 points is about 150 metres).
+    search_back_points: 50
+    # How far ahead it looks, in points (300 points is about 900 metres).
+    # Keeping the search short is what stops it jumping to the wrong part of
+    # the stage where the road crosses or doubles back on itself.
+    search_forward_points: 300
+    # If the car is further than this (metres) from the stage line, the
+    # co-driver counts that as "off the stage".
+    lost_distance_m: 25.0
+    # After this many packets off the stage, the co-driver searches the whole
+    # stage again to find you. Roughly 30 packets is one second.
+    lost_after_packets: 30
+
+  gaps:
+    # No telemetry for this long (seconds) means the game is paused, rewinding
+    # or finished. The co-driver stops talking and clears pending calls.
+    suspend_after_s: 0.5
+    # When telemetry returns and the car is further away than this (metres),
+    # it counts as a rewind or restart and the co-driver starts fresh.
+    rewind_jump_m: 50.0
+
+  trigger:
+    # How many seconds before the corner a call should be finished. The most
+    # important setting. Higher means earlier calls. 1.5 to 2.0 feels right
+    # for most people.
+    reaction_buffer_s: 1.8
+    # Speeds (km/h) at which the extra lead below applies.
+    speed_curve_kmh:  [0,   60,  120, 200]
+    # Extra lead at those speeds, as a factor. 1.25 means calls come 25%
+    # earlier at 200 km/h. Raise these if calls feel late when going fast.
+    speed_curve_mult: [1.0, 1.0, 1.1, 1.25]
+    # A call never comes later than this many metres before the corner, even
+    # when driving slowly.
+    min_lead_m: 15.0
+    # A call never comes earlier than this many metres before the corner, even
+    # when driving very fast.
+    max_lead_m: 400.0
+
+  record:
+    # Record every drive so that Learn can improve the stage afterwards. Costs
+    # nothing. Turn off to keep drives out of the runs folder.
+    enabled: true
+    # Folder for recorded drives.
+    dir: "recordings/runs"
+
+  queue:
+    # Calls closer together than this (seconds) are spoken as one phrase.
+    link_window_s: 1.2
+    # A joined phrase longer than this (seconds) drops its less important part
+    # instead. The co-driver never talks over itself.
+    max_phrase_s: 3.5
+    # A call that could only finish this many seconds after the corner is
+    # skipped. Silence beats hearing "three right" in the middle of it.
+    drop_if_later_than_s: 0.3
+
+# ---------------------------------------------------------------------------
+# Audio
+# ---------------------------------------------------------------------------
+audio:
+  # Name of the voice pack to use, from the voices folder. Without a pack you
+  # hear placeholder beeps. Changing this needs a restart of the co-driver.
+  voice_pack: "de"
+  # Folder where voice packs live.
+  voices_dir: "voices"
+  # Audio sample rate. Leave at 48000.
+  samplerate: 48000
+  # Mono. Leave it.
+  channels: 1
+  # Audio buffer size. Smaller means lower delay; too small crackles.
+  blocksize: 256
+  # Output device name or number. Empty uses the Windows default. Useful if
+  # the voice should come out of a headset instead of the speakers.
+  device: null
+  # How much two words overlap when spoken together, in milliseconds. Lower
+  # sounds choppier, higher slurs.
+  crossfade_ms: 25
+  # Volume in dB. 0 is as generated, -6 is about half as loud, 6 is louder.
+  gain_db: 0.0
+  # Length of the placeholder beep per word, in seconds, used when no voice
+  # pack is set. Keeps the timing realistic before a voice exists.
+  placeholder_clip_s: 0.35
+
+logging:
+  # How much the terminal prints: DEBUG, INFO, WARNING or ERROR.
+  level: INFO
+  # How many telemetry lines per second the listen command prints. 0 prints
+  # every packet.
+  listen_print_hz: 4.0

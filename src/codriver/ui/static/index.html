@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codriver</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1115'/%3E%3Cpath d='M14 40 Q32 10 50 40' fill='none' stroke='%232fb3ff' stroke-width='8' stroke-linecap='round'/%3E%3Ccircle cx='50' cy='40' r='6' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">co<span>driver</span></div>
+  <nav>
+    <button data-tab="setup" class="active">Setup</button>
+    <button data-tab="drive">Drive</button>
+    <button data-tab="stages">Stages</button>
+    <button data-tab="config">Config</button>
+    <button data-tab="voice">Voice</button>
+  </nav>
+  <div id="jobpill" class="pill idle">idle</div>
+</header>
+
+<main>
+
+<!-- ============================== SETUP ============================== -->
+<section id="tab-setup" class="tab active">
+  <div class="grid2">
+    <div class="card">
+      <h2>1 · Game settings</h2>
+      <p>In Forza Horizon 6: <b>Settings → HUD and Gameplay</b></p>
+      <table class="kv">
+        <tr><td>Data Out</td><td><b>On</b></td></tr>
+        <tr><td>Data Out IP Address</td><td><code>127.0.0.1</code></td></tr>
+        <tr><td>Data Out IP Port</td><td><code id="port-hint">5400</code></td></tr>
+      </table>
+      <p class="muted">Not 5300, whatever the guides say: the game uses 5200-5300 itself.</p>
+      <div class="row">
+        <button id="btn-scan" class="primary">Check: is the game talking to me?</button>
+        <span class="muted">Start driving, then press. It listens for 20 s.</span>
+      </div>
+      <pre id="scan-out" class="log small"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Phone as HUD</h2>
+      <p>Same WLAN, open this on your phone:</p>
+      <div class="row"><code id="lan-url">…</code></div>
+      <img id="qr" alt="QR code" src="/api/qr.svg">
+      <p class="muted">Windows will ask once to allow codriver on private networks. Nothing leaves your WLAN.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2 · Record a recon lap</h2>
+    <p>Drive the race <b>once</b>, any speed, clean line. The recording becomes the stage.</p>
+    <div class="row">
+      <input id="capture-name" placeholder="stage name, e.g. coast-road">
+      <button id="btn-capture" class="primary">Start recording</button>
+      <button id="btn-capture-stop" class="danger" disabled>Stop</button>
+    </div>
+    <div id="capture-status" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Build the pace notes</h2>
+    <div class="row">
+      <select id="build-recording"></select>
+      <input id="build-name" placeholder="stage name (default: recording name)">
+      <button id="btn-build" class="primary">Build</button>
+    </div>
+    <pre id="build-out" class="log small"></pre>
+  </div>
+
+  <div class="card">
+    <h2>4 · Drive</h2>
+    <p>Go to <b>Drive</b>, pick the stage, press Start, then race it in any car at any speed. Every drive is recorded. Press <b>Learn</b> on the stage afterwards and the notes get better.</p>
+  </div>
+</section>
+
+<!-- ============================== DRIVE ============================== -->
+<section id="tab-drive" class="tab">
+  <div class="row">
+    <select id="drive-stage"></select>
+    <label class="chk"><input type="checkbox" id="drive-record" checked> record this drive</label>
+    <button id="btn-run" class="primary big">Start co-driver</button>
+    <button id="btn-run-stop" class="danger big" disabled>Stop</button>
+  </div>
+  <div id="hud" class="hud">
+    <div class="hud-state" id="hud-state">idle</div>
+    <div class="hud-main">
+      <div class="hud-next" id="hud-next">select a stage and press start</div>
+      <div class="hud-sub" id="hud-sub"></div>
+    </div>
+    <div class="hud-row">
+      <div><span class="lbl">km</span><span id="hud-km">0.000</span></div>
+      <div><span class="lbl">km/h</span><span id="hud-speed">0</span></div>
+      <div><span class="lbl">off line</span><span id="hud-off">0.0 m</span></div>
+      <div><span class="lbl">spoken / dropped</span><span id="hud-counts">0 / 0</span></div>
+    </div>
+  </div>
+  <h3>Calls</h3>
+  <ol id="calls" class="calls"></ol>
+</section>
+
+<!-- ============================== STAGES ============================== -->
+<section id="tab-stages" class="tab">
+  <div class="grid-stages">
+    <div class="card">
+      <h2>Stages</h2>
+      <ul id="stage-list" class="list"></ul>
+    </div>
+    <div class="card" id="stage-detail-card">
+      <h2 id="stage-title">no stage selected</h2>
+      <div class="row" id="stage-actions" hidden>
+        <button id="btn-rebuild">Rebuild from recon</button>
+        <button id="btn-learn" class="primary">Learn from <span id="learn-count">0</span> run(s)</button>
+        <button id="btn-delete" class="danger">Delete</button>
+      </div>
+      <canvas id="map" width="700" height="420"></canvas>
+      <div class="legend">
+        <span class="sw c1"></span>1 <span class="sw c2"></span>2 <span class="sw c3"></span>3
+        <span class="sw c4"></span>4 <span class="sw c5"></span>5 <span class="sw c6"></span>6
+        <span class="sw cs"></span>straight
+      </div>
+      <pre id="stage-out" class="log small"></pre>
+      <table id="stage-notes" class="notes"></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== CONFIG ============================== -->
+<section id="tab-config" class="tab">
+  <div class="row cfg-top">
+    <input id="config-search" placeholder="search settings…">
+    <span class="muted">Changes apply within half a second, even while driving. A blue dot means you changed it; <b>reset</b> restores the default. <span class="badge">rebuild</span> marks values that only act when you build or learn a stage.</span>
+  </div>
+  <div id="config-form"></div>
+</section>
+
+<!-- ============================== VOICE ============================== -->
+<section id="tab-voice" class="tab">
+  <div class="grid2">
+    <div class="card">
+      <h2>Voice packs</h2>
+      <ul id="voice-list" class="list"></ul>
+      <p class="muted">The active pack is <code>audio.voice_pack</code> in Config. Without a pack you hear placeholder beeps.</p>
+    </div>
+    <div class="card">
+      <h2>Generate</h2>
+      <div class="row">
+        <select id="voice-lang"><option value="en">English</option><option value="de">Deutsch</option></select>
+        <select id="voice-engine"><option value="edge">neural (needs internet once)</option><option value="sapi">offline Windows voice</option></select>
+        <input id="voice-name" placeholder="pack name (optional)">
+        <button id="btn-voice-gen" class="primary">Generate</button>
+      </div>
+      <pre id="voice-out" class="log small"></pre>
+      <h2>Try it</h2>
+      <div class="row">
+        <input id="say-text" value="100 left tightens 1">
+        <select id="say-pack"></select>
+        <button id="btn-say">Say</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

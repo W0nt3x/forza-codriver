@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Your own tuning. defaults.yaml is tracked; this one is yours.
+config/local.yaml
+
+# Recordings are large and personal to your drives (incl. runs/ saved by `run`).
+recordings/**/*.fzr
+recordings/**/*.ndjson
+
+# Generated stages, except any you deliberately commit as examples.
+stages/*.json
+stages/*.json.bak
+stages/*.gpx
+!stages/example*.json
+
+# Voice packs are generated in 20 seconds with `codriver voice generate`.
+voices/*/
+
+# Working notes for the AI assistant; not part of the project.
+CLAUDE.md
+.claude/
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
