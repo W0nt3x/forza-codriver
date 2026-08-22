@@ -31,10 +31,18 @@ def project(tmp_path):
     return tmp_path, cfg
 
 
+def _no_network(*args, **kwargs):
+    raise OSError("network is disabled in tests")
+
+
 @pytest.fixture
 def client(project):
     root, cfg = project
     app = create_app(cfg, root, host_for_links="192.0.2.10", port=8777)
+    # The shipped defaults point at the live community relay. Tests never
+    # talk to it (or to GitHub); each test that needs a remote installs a fake.
+    app.state.post_json = _no_network
+    app.state.fetch = _no_network
     with TestClient(app) as c:
         yield c, root, cfg
 
