@@ -139,6 +139,20 @@ Three or four drives make a noticeable difference. The previous version of
 the stage is kept as a `.json.bak` next to it, in case Learn makes things
 worse (it shouldn't, but I've been wrong before).
 
+## Community stages
+
+Nobody wants to record every race first. The **Stages** tab has a Community
+section that lists stages other players have shared, named after the race in
+Forza; press **Install** and it is ready to drive. The files come from a
+public repository, [codriver-stages](https://github.com/W0nt3x/codriver-stages),
+that holds nothing but stage files and needs no account to read.
+
+Built a good one yourself? Press **Share** on the stage. codriver writes a
+clean copy (the line, the notes, the speeds you drove; no personal data and no
+recording) and opens the upload page of that repository. Drag the file onto
+it, press *Propose changes*, and GitHub turns it into a pull request. Please
+name stages exactly like the race in Forza, so people find them.
+
 ## Your phone as the HUD
 
 The game runs fullscreen, so a second window on the PC is useless. The Setup

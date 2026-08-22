@@ -202,3 +202,76 @@ def test_voice_dropdown_tells_the_truth_about_a_missing_pack(client):
     options = {f["key"]: f for f in c.get("/api/config").json()["fields"]}["audio.voice_pack"]["options"]
     assert options[0]["value"] == cfg.get("audio.voice_pack")
     assert "not generated yet" in options[0]["label"]
+
+
+def _fake_fetch(files):
+    """A stand-in for HTTP: maps URL suffixes to bytes."""
+    def fetch(url, timeout_s=8.0):
+        for suffix, payload in files.items():
+            if url.endswith(suffix):
+                return payload
+        raise OSError(f"404 {url}")
+    return fetch
+
+
+def test_community_list_and_install(client):
+    c, root, cfg = client
+    from codriver.stage.schema import save, Stage
+    from codriver.stage.line import LinePoint
+    from codriver.stage.notes import Note
+    import json as _json
+
+    shared = Stage(name="coast-road-sprint",
+                   line=[LinePoint(x=float(i) * 3, y=0.0, z=0.0) for i in range(40)],
+                   notes=[Note(at_m=30.0, tokens=["3", "right"], severity=3, direction="right")],
+                   length_m=117.0)
+    tmp = root / "shared.json"
+    save(shared, tmp)
+    index = {"stages": [
+        {"file": "coast-road-sprint.json", "name": "coast-road-sprint", "length_m": 117.0, "notes": 1, "author": "nils"},
+        {"file": "../evil.json", "name": "evil"},          # must be filtered out
+    ]}
+    c.app.state.fetch = _fake_fetch({
+        "/index.json": _json.dumps(index).encode(),
+        "/stages/coast-road-sprint.json": tmp.read_bytes(),
+    })
+
+    listing = c.get("/api/community").json()
+    assert listing["available"] is True
+    assert [s["file"] for s in listing["stages"]] == ["coast-road-sprint.json"], "unsafe names dropped"
+    assert listing["stages"][0]["installed"] is False
+
+    r = c.post("/api/community/install", json={"file": "coast-road-sprint.json"})
+    assert r.status_code == 200, r.text
+    assert (root / "stages" / "coast-road-sprint.json").is_file()
+    assert c.get("/api/community").json()["stages"][0]["installed"] is True
+    assert c.post("/api/community/install", json={"file": "coast-road-sprint.json"}).status_code == 409
+    assert c.post("/api/community/install", json={"file": "../evil.json"}).status_code == 400
+    detail = c.get("/api/stages/coast-road-sprint").json()
+    assert detail["generator"]["installed_from"].endswith("stages/coast-road-sprint.json")
+
+
+def test_community_unreachable_degrades_gracefully(client):
+    c, _, _ = client
+    c.app.state.fetch = _fake_fetch({})
+    listing = c.get("/api/community").json()
+    assert listing["available"] is False and "index" in listing["reason"]
+
+
+def test_share_writes_a_clean_file_with_credits(client, monkeypatch):
+    c, root, cfg = client
+    monkeypatch.setattr("webbrowser.open", lambda *a, **k: True)
+    write_synth(root / "recordings" / "s.fzr",
+                SynthSpec(shape="slalom", duration_s=40.0, speed_mps=18.0, size_m=60.0,
+                          pause_at_s=None, jump_at_s=None))
+    c.post("/api/build", json={"capture": "s.fzr", "name": "Coast Road Sprint"})
+    assert (root / "stages" / "coast-road-sprint.json").is_file(), "names are lowercase slugs"
+
+    r = c.post("/api/stages/coast-road-sprint/share", json={"author": "W0nt3x"})
+    assert r.status_code == 200, r.text
+    out = root / "share" / "coast-road-sprint.json"
+    assert out.is_file()
+    data = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert data["community"]["author"] == "W0nt3x"
+    assert data["community"]["race"] == "coast-road-sprint"
+    assert "upload/main/stages" in r.json()["upload_url"]

@@ -274,6 +274,19 @@ def _coerce(value: Any, kind: str) -> Any:
 # --------------------------------------------------------------------------
 
 
+_SAFE_FILE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}\.json$")
+"""Community stage file names: lowercase slug plus .json, nothing that could
+climb out of the stages folder."""
+
+
+def _http_get(url: str, timeout_s: float = 8.0) -> bytes:
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "codriver"})
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        return resp.read()
+
+
 def lan_ip() -> str:
     """The address a phone on the same network should use. No packet is sent
     -- connecting a UDP socket only picks the outbound interface."""
@@ -453,7 +466,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..record.capture import default_capture_path
         from ..record.recon import capture_stream
 
-        name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or "")).strip("-") or None
+        name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or "")).strip("-").lower() or None
         path = default_capture_path(recordings_dir, name)
 
         def job(emit, should_stop):
@@ -490,7 +503,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         capture = recordings_dir / str(body.get("capture", ""))
         if not capture.is_file():
             raise HTTPException(404, f"no recording {body.get('capture')}")
-        name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or capture.stem)).strip("-")
+        name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or capture.stem)).strip("-").lower()
         try:
             stage, report = await asyncio.get_running_loop().run_in_executor(
                 None, lambda: build_stage(capture, cfg, name=name)
@@ -678,6 +691,108 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
         duration = await asyncio.get_running_loop().run_in_executor(None, speak)
         return {"ok": True, "duration_s": duration}
+
+    # -- community stages ----------------------------------------------------
+    # A separate, public GitHub repo holds shared stage files plus an
+    # index.json. Reading it needs no account; sharing goes through GitHub's
+    # upload page, which turns a drag and drop into a pull request.
+
+    app.state.fetch = _http_get  # tests swap this for a fake
+
+    def _community() -> tuple[str, str] | None:
+        repo = str(cfg.get("community.repo", "") or "").strip()
+        return (repo, str(cfg.get("community.branch", "main") or "main")) if repo else None
+
+    @app.get("/api/community")
+    async def community_list() -> dict:
+        target = _community()
+        if target is None:
+            return {"available": False, "reason": "no community repo configured (community.repo)"}
+        repo, branch = target
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/index.json"
+        try:
+            raw = await asyncio.get_running_loop().run_in_executor(None, lambda: app.state.fetch(url))
+            data = json.loads(raw)
+        except Exception as exc:
+            return {"available": False, "repo": repo, "url": f"https://github.com/{repo}",
+                    "reason": f"could not load the community index ({exc})"}
+        installed = {p.stem for p in stages_dir.glob("*.json")}
+        stages = []
+        for s in data.get("stages", []):
+            file = str(s.get("file", ""))
+            if not _SAFE_FILE.match(file):
+                continue
+            stages.append({**s, "installed": file[:-5] in installed})
+        return {"available": True, "repo": repo, "url": f"https://github.com/{repo}", "stages": stages}
+
+    @app.post("/api/community/install")
+    async def community_install(body: dict) -> dict:
+        from ..stage.schema import StageError, from_dict, save
+
+        target = _community()
+        if target is None:
+            raise HTTPException(400, "no community repo configured")
+        repo, branch = target
+        file = str(body.get("file", ""))
+        if not _SAFE_FILE.match(file):
+            raise HTTPException(400, f"not a stage file name: {file!r}")
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/stages/{file}"
+        try:
+            raw = await asyncio.get_running_loop().run_in_executor(None, lambda: app.state.fetch(url))
+            stage = from_dict(json.loads(raw))
+        except StageError as exc:
+            raise HTTPException(502, f"the shared file is not a valid stage: {exc}") from exc
+        except Exception as exc:
+            raise HTTPException(502, f"download failed: {exc}") from exc
+        dest = stages_dir / file
+        if dest.exists() and not body.get("overwrite"):
+            raise HTTPException(409, f"you already have a stage named {file[:-5]}")
+        stage.generator = {**stage.generator, "installed_from": f"{repo}/stages/{file}"}
+        save(stage, dest)
+        return {"ok": True, "name": stage.name, "file": file}
+
+    @app.post("/api/stages/{name}/share")
+    async def stage_share(name: str, body: dict | None = None) -> dict:
+        import webbrowser
+
+        from ..stage.schema import load, to_dict
+
+        path = stages_dir / f"{name}.json"
+        if not path.is_file():
+            raise HTTPException(404, f"no stage {name}")
+        target = _community()
+        if target is None:
+            raise HTTPException(400, "no community repo configured")
+        repo, branch = target
+        st = load(path)
+        if not st.notes:
+            raise HTTPException(400, "this stage has no notes; nothing worth sharing yet")
+        data = to_dict(st)
+        # Nothing personal goes out: the stage is geometry and notes. The
+        # recording itself stays on this PC; only its hash travels, so the
+        # same recon is recognisable if shared twice.
+        data["community"] = {
+            "race": st.name,
+            "author": str((body or {}).get("author", "")).strip()[:60],
+            "tool_version": __import__("codriver").__version__,
+            "shared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        share_dir = root / "share"
+        share_dir.mkdir(exist_ok=True)
+        out = share_dir / f"{name}.json"
+        out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+        upload_url = f"https://github.com/{repo}/upload/{branch}/stages"
+        try:
+            import os
+
+            os.startfile(share_dir)  # type: ignore[attr-defined]  # Windows: open the folder
+        except Exception:
+            pass
+        try:
+            webbrowser.open(upload_url)
+        except Exception:
+            pass
+        return {"ok": True, "path": str(out), "upload_url": upload_url}
 
     # -- websocket -----------------------------------------------------------
 

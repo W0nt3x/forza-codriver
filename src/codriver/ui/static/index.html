@@ -50,11 +50,22 @@
     </div>
   </div>
 
+  <div class="card" id="voice-setup-card">
+    <h2>2 · Give it a voice</h2>
+    <p id="voice-setup-text">Checking…</p>
+    <div class="row" id="voice-setup-actions">
+      <button class="primary" data-gen-lang="en">Generate English voice</button>
+      <button class="primary" data-gen-lang="de">Deutsche Stimme erzeugen</button>
+      <span class="muted">Needs the internet for about 20 seconds. Without a voice you only hear beeps.</span>
+    </div>
+    <pre id="voice-setup-out" class="log small"></pre>
+  </div>
+
   <div class="card">
-    <h2>2 · Record a recon lap</h2>
-    <p>Drive the race <b>once</b>, any speed, clean line. The recording becomes the stage.</p>
+    <h2>3 · Record a recon lap</h2>
+    <p>Drive the race <b>once</b>, any speed, clean line. The recording becomes the stage. Name it exactly like the race in Forza, so others can find it.</p>
     <div class="row">
-      <input id="capture-name" placeholder="stage name, e.g. coast-road">
+      <input id="capture-name" placeholder="Forza race name, e.g. Coast Road Sprint">
       <button id="btn-capture" class="primary">Start recording</button>
       <button id="btn-capture-stop" class="danger" disabled>Stop</button>
     </div>
@@ -62,7 +73,7 @@
   </div>
 
   <div class="card">
-    <h2>3 · Build the pace notes</h2>
+    <h2>4 · Build the pace notes</h2>
     <div class="row">
       <select id="build-recording"></select>
       <input id="build-name" placeholder="stage name (default: recording name)">
@@ -72,13 +83,15 @@
   </div>
 
   <div class="card">
-    <h2>4 · Drive</h2>
+    <h2>5 · Drive</h2>
     <p>Go to <b>Drive</b>, pick the stage, press Start, then race it in any car at any speed. Every drive is recorded. Press <b>Learn</b> on the stage afterwards and the notes get better.</p>
+    <p class="muted">No time to record? The <b>Stages</b> tab lists community stages other players shared. Install one and drive. And if you built a good one, press <b>Share</b> there.</p>
   </div>
 </section>
 
 <!-- ============================== DRIVE ============================== -->
 <section id="tab-drive" class="tab">
+  <div id="drive-voice-warn" class="warnbox" hidden>No voice pack is active, you will hear beeps. Generate one on the <b>Setup</b> or <b>Voice</b> tab (20 seconds), then start the co-driver.</div>
   <div class="row">
     <select id="drive-stage"></select>
     <label class="chk"><input type="checkbox" id="drive-record" checked> record this drive</label>
@@ -105,15 +118,23 @@
 <!-- ============================== STAGES ============================== -->
 <section id="tab-stages" class="tab">
   <div class="grid-stages">
-    <div class="card">
-      <h2>Stages</h2>
-      <ul id="stage-list" class="list"></ul>
+    <div>
+      <div class="card">
+        <h2>My stages</h2>
+        <ul id="stage-list" class="list"></ul>
+      </div>
+      <div class="card">
+        <h2>Community</h2>
+        <p class="muted small" id="community-text">Loading…</p>
+        <ul id="community-list" class="list"></ul>
+      </div>
     </div>
     <div class="card" id="stage-detail-card">
       <h2 id="stage-title">no stage selected</h2>
       <div class="row" id="stage-actions" hidden>
         <button id="btn-rebuild">Rebuild from recon</button>
         <button id="btn-learn" class="primary">Learn from <span id="learn-count">0</span> run(s)</button>
+        <button id="btn-share">Share</button>
         <button id="btn-delete" class="danger">Delete</button>
       </div>
       <canvas id="map" width="700" height="420"></canvas>

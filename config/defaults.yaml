@@ -245,6 +245,14 @@ audio:
   # pack is set. Keeps the timing realistic before a voice exists.
   placeholder_clip_s: 0.35
 
+community:
+  # The public GitHub repo that holds stages shared by other players
+  # (owner/name). The Stages tab lists them and can install them; Share
+  # opens its upload page. Empty disables the Community section.
+  repo: "W0nt3x/codriver-stages"
+  # Branch of that repo to read from.
+  branch: "main"
+
 logging:
   # How much the terminal prints: DEBUG, INFO, WARNING or ERROR.
   level: INFO

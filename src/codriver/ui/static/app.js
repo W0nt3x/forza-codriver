@@ -60,6 +60,44 @@ async function refreshState() {
   const voices = STATE.voices.map((v) => `<li><b>${v}</b>${v === STATE.voice_pack ? ' <span class="tag">active</span>' : ""}</li>`).join("");
   $("#voice-list").innerHTML = voices || "<li class='muted'>no voice pack yet, generate one</li>";
   $("#say-pack").innerHTML = STATE.voices.map((v) => `<option ${v === STATE.voice_pack ? "selected" : ""}>${v}</option>`).join("");
+
+  // Voice state, shown where people actually look: Setup and Drive.
+  const voiceOk = STATE.voices.includes(STATE.voice_pack);
+  $("#voice-setup-text").innerHTML = voiceOk
+    ? `Active voice: <b>${STATE.voice_pack}</b>. Done. More voices and a test button are on the Voice tab.`
+    : (STATE.voices.length
+        ? `You have a voice pack (${STATE.voices.join(", ")}) but <b>${STATE.voice_pack}</b> is selected and does not exist. Pick one under Config, Voice.`
+        : `<b>No voice yet.</b> Right now the co-driver would only beep. Generate one:`);
+  $("#voice-setup-actions").hidden = voiceOk;
+  $("#drive-voice-warn").hidden = voiceOk;
+
+  loadCommunity();
+}
+
+let COMMUNITY = null;
+async function loadCommunity() {
+  try {
+    COMMUNITY = await api("/api/community");
+  } catch (x) {
+    COMMUNITY = { available: false, reason: x.message };
+  }
+  const text = $("#community-text"), list = $("#community-list");
+  if (!COMMUNITY.available) {
+    text.textContent = COMMUNITY.reason || "not reachable";
+    list.innerHTML = "";
+    return;
+  }
+  text.innerHTML = `Stages shared by other players, from <a href="${COMMUNITY.url}" target="_blank" rel="noopener">${COMMUNITY.repo}</a>. Install one and drive; Share yours with the button on the right.`;
+  list.innerHTML = COMMUNITY.stages.map((s) =>
+    `<li><b>${s.name}</b><span class="muted"> ${fmtKm(s.length_m || 0)} km · ${s.notes || 0} notes${s.author ? " · by " + s.author : ""}</span>
+       <button class="small-btn" data-install="${s.file}" ${s.installed ? "disabled" : ""}>${s.installed ? "installed" : "Install"}</button></li>`).join("")
+    || "<li class='muted'>nothing shared yet. Be the first: build a stage and press Share.</li>";
+  list.querySelectorAll("button[data-install]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      b.disabled = true; b.textContent = "installing…";
+      try { const r = await api("/api/community/install", "POST", { file: b.dataset.install }); b.textContent = "installed"; refreshState(); showStage(r.name); }
+      catch (x) { b.disabled = false; b.textContent = "Install"; alert(x.message); }
+    }));
 }
 
 function setJobPill(job) {
@@ -193,6 +231,20 @@ async function showStage(name) {
 }
 $("#btn-rebuild").onclick = async () => { $("#stage-out").textContent = "rebuilding…"; try { const r = await api(`/api/stages/${currentStage}/rebuild`, "POST"); $("#stage-out").textContent = r.report; showStage(currentStage); refreshState(); } catch (x) { $("#stage-out").textContent = "error: " + x.message; } };
 $("#btn-learn").onclick = async () => { $("#stage-out").textContent = "learning…"; try { const r = await api(`/api/stages/${currentStage}/learn`, "POST"); $("#stage-out").textContent = r.report; showStage(currentStage); refreshState(); } catch (x) { $("#stage-out").textContent = "error: " + x.message; } };
+$("#btn-share").onclick = async () => {
+  const author = prompt("Your name for the credits (optional):", localStorage.getItem("codriver.author") || "") ;
+  if (author === null) return;
+  try { localStorage.setItem("codriver.author", author); } catch (_) {}
+  $("#stage-out").textContent = "preparing…";
+  try {
+    const r = await api(`/api/stages/${currentStage}/share`, "POST", { author });
+    $("#stage-out").textContent =
+      `Share file written: ${r.path}\n\n` +
+      `A browser tab with the community upload page should have opened (${r.upload_url}).\n` +
+      `Drag the file onto it, press "Propose changes", and GitHub turns it into a pull request.\n` +
+      `It appears in the Community list once it is merged. Thank you!`;
+  } catch (x) { $("#stage-out").textContent = "error: " + x.message; }
+};
 $("#btn-delete").onclick = async () => { if (!confirm(`delete stage ${currentStage}?`)) return; await api(`/api/stages/${currentStage}`, "DELETE"); currentStage = null; $("#stage-actions").hidden = true; $("#stage-title").textContent = "no stage selected"; $("#stage-notes").innerHTML = ""; const c = $("#map"); c.getContext("2d").clearRect(0, 0, c.width, c.height); refreshState(); };
 
 const CLASS_COLOUR = { 1: "#ff3b30", 2: "#ff7a1a", 3: "#ffcc00", 4: "#4cd964", 5: "#2fb3ff", 6: "#8e6bff", S: "#a0a0a8" };
@@ -312,8 +364,16 @@ $("#config-search").addEventListener("input", renderConfig);
 
 // ---------------------------------------------------------------- voice
 $("#btn-voice-gen").onclick = () => { $("#voice-out").textContent = ""; api("/api/voice/generate", "POST", { lang: $("#voice-lang").value, engine: $("#voice-engine").value, name: $("#voice-name").value }).catch((x) => alert(x.message)); };
+document.querySelectorAll("#voice-setup-actions button[data-gen-lang]").forEach((b) =>
+  b.addEventListener("click", () => {
+    $("#voice-setup-out").textContent = "";
+    api("/api/voice/generate", "POST", { lang: b.dataset.genLang, engine: "edge" }).catch((x) => alert(x.message));
+  }));
 function onVoice(e) {
-  const out = $("#voice-out");
+  // The same messages land on the Voice tab and on the Setup card.
+  const outs = [$("#voice-out"), $("#voice-setup-out")];
+  const log = (_, line) => outs.forEach((o) => { o.textContent += line + "\n"; o.scrollTop = o.scrollHeight; });
+  const out = null;
   if (e.kind === "voice_started") log(out, `generating '${e.name}' (${e.lang}, ${e.engine})… ~20 s`);
   if (e.kind === "voice_done") {
     log(out, `done: ${e.clips} clips, ${e.seconds.toFixed(1)} s of audio, voice ${e.voice}.`);
