@@ -9,7 +9,7 @@ three"*. English or German.
 > handful of stages. Expect rough edges: a corner called a touch early or
 > late, a setting that only kicks in after Stop and Start, a stage that needs
 > a rebuild after an update. If something breaks,
-> [open an issue](https://github.com/W0nt3x/codriver-for-forza-horizon-6/issues)
+> [open an issue](https://github.com/W0nt3x/forza-codriver/issues)
 > and say what you did; recordings make almost everything reproducible.
 
 ## Why this exists

@@ -326,3 +326,32 @@ def test_state_names_the_words_a_voice_pack_is_missing(client):
     assert s["voices"] == ["old"]
     assert s["voice_gaps"] == {"old": ["water"]}
 
+
+def test_a_fresh_clone_has_no_stages_folder_and_that_is_fine(client):
+    """Nothing in git creates stages/ (stage files are ignored). The UI must
+    come up without it, and the first Install or Build must create it."""
+    import json as _json
+    import shutil
+
+    from codriver.stage.line import LinePoint
+    from codriver.stage.schema import Stage, save
+
+    c, root, cfg = client
+    shared = Stage(name="coast-road-sprint",
+                   line=[LinePoint(x=float(i) * 3, y=0.0, z=0.0) for i in range(40)],
+                   length_m=117.0)
+    tmp = root / "shared.json"
+    save(shared, tmp)
+    c.app.state.fetch = _fake_fetch({
+        "/index.json": _json.dumps({"stages": [{"file": "coast-road-sprint.json", "name": "coast-road-sprint"}]}).encode(),
+        "/stages/coast-road-sprint.json": tmp.read_bytes(),
+    })
+    shutil.rmtree(root / "stages")
+    assert not (root / "stages").exists()
+
+    assert c.get("/api/state").json()["stages"] == []
+    assert c.get("/api/community").json()["stages"][0]["installed"] is False
+    r = c.post("/api/community/install", json={"file": "coast-road-sprint.json"})
+    assert r.status_code == 200, r.text
+    assert (root / "stages" / "coast-road-sprint.json").is_file(), "install created the folder"
+
