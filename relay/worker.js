@@ -67,7 +67,7 @@ export default {
     try {
       const result = await openPullRequest(env, file, stage, content);
       return json({ ok: true, ...result });
-    } catch (e) {
+    } catch (/** @type {any} */ e) {
       return json({ error: `github: ${e.message}` }, e.status === 401 || e.status === 403 ? 500 : 502);
     }
   },
@@ -104,7 +104,7 @@ async function openPullRequest(env, file, stage, content) {
   try {
     const existing = await gh(`contents/stages/${file}?ref=${encodeURIComponent(base)}`);
     existingSha = existing.sha || null;
-  } catch (e) {
+  } catch (/** @type {any} */ e) {
     if (e.status !== 404) throw e;
   }
 
@@ -143,8 +143,14 @@ async function openPullRequest(env, file, stage, content) {
   return { pr_url: pr.html_url, number: pr.number, updated: Boolean(existingSha) };
 }
 
+/**
+ * @typedef {{ method?: string, body?: any }} GhOptions
+ * @typedef {Error & { status?: number }} GhError
+ */
 function github(env) {
-  return async (path, { method = "GET", body } = {}) => {
+  /** @param {string} path @param {GhOptions} [opts] */
+  return async (path, opts = {}) => {
+    const { method = "GET", body } = opts;
     const r = await fetch(`https://api.github.com/repos/${env.REPO}/${path}`, {
       method,
       headers: {
@@ -164,8 +170,8 @@ function github(env) {
       data = { raw: text };
     }
     if (!r.ok) {
-      const e = new Error(`${method} ${path} -> ${r.status} ${data.message || text}`);
-      e.status = r.status;
+      /** @type {GhError} */
+      const e = Object.assign(new Error(`${method} ${path} -> ${r.status} ${data.message || text}`), { status: r.status });
       throw e;
     }
     return data;
