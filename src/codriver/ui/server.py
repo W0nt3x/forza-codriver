@@ -460,6 +460,51 @@ class BrowserGuard:
         ]})
         await send({"type": "http.response.body", "body": body})
 
+def _http_post_json(
+    url: str, payload: dict, timeout_s: float = 60.0, headers: dict | None = None
+) -> dict:
+    """POST JSON, get JSON. An HTTP error carries the server's own message,
+    which for the relay is the reason a share was refused."""
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"User-Agent": "codriver", "Content-Type": "application/json", **(headers or {})},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            return json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("error") or detail
+        except Exception:
+            pass
+        raise RuntimeError(f"{exc.code}: {detail[:300]}") from None
+
+
+def _stage_detail_dict(st) -> dict:
+    """What the Stages tab draws: line, markings, notes. Shared by a stage on
+    disk and a community preview, so both look the same on the map."""
+    return {
+        "name": st.name,
+        "length_m": st.length_m,
+        "spacing_m": st.spacing_m,
+        "line": [[round(p.x, 1), round(p.z, 1)] for p in st.line],
+        "markings": [m.label for m in st.markings],
+        "notes": [
+            {"at_m": n.at_m, "text": n.text, "index": n.index, "kind": n.kind,
+             "severity": n.severity, "radius_m": n.radius_m,
+             "observed_kmh": n.observed_kmh, "length_m": n.length_m}
+            for n in st.notes
+        ],
+        "source": st.source,
+        "generator": st.generator,
+    }
+
+
 def lan_ip() -> str:
     """The address a phone on the same network should use. No packet is sent
     -- connecting a UDP socket only picks the outbound interface."""
