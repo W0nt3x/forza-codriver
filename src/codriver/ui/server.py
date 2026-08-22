@@ -331,6 +331,49 @@ def _http_get(url: str, timeout_s: float = 8.0) -> bytes:
         return resp.read()
 
 
+def _http_post_json(url: str, payload: dict, timeout_s: float = 60.0) -> dict:
+    """POST JSON, get JSON. An HTTP error carries the server's own message,
+    which for the relay is the reason a share was refused."""
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"User-Agent": "codriver", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            return json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("error") or detail
+        except Exception:
+            pass
+        raise RuntimeError(f"{exc.code}: {detail[:300]}") from None
+
+
+def _stage_detail_dict(st) -> dict:
+    """What the Stages tab draws: line, markings, notes. Shared by a stage on
+    disk and a community preview, so both look the same on the map."""
+    return {
+        "name": st.name,
+        "length_m": st.length_m,
+        "spacing_m": st.spacing_m,
+        "line": [[round(p.x, 1), round(p.z, 1)] for p in st.line],
+        "markings": [m.label for m in st.markings],
+        "notes": [
+            {"at_m": n.at_m, "text": n.text, "index": n.index, "kind": n.kind,
+             "severity": n.severity, "radius_m": n.radius_m,
+             "observed_kmh": n.observed_kmh, "length_m": n.length_m}
+            for n in st.notes
+        ],
+        "source": st.source,
+        "generator": st.generator,
+    }
+
+
 def lan_ip() -> str:
     """The address a phone on the same network should use. No packet is sent
     -- connecting a UDP socket only picks the outbound interface."""
@@ -568,24 +611,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         st = load(path)
-        xs = [p.x for p in st.line]
-        zs = [p.z for p in st.line]
-        return {
-            "name": st.name,
-            "length_m": st.length_m,
-            "spacing_m": st.spacing_m,
-            "line": [[round(x, 1), round(z, 1)] for x, z in zip(xs, zs)],
-            "markings": [m.label for m in st.markings],
-            "notes": [
-                {"at_m": n.at_m, "text": n.text, "index": n.index, "kind": n.kind,
-                 "severity": n.severity, "radius_m": n.radius_m,
-                 "observed_kmh": n.observed_kmh, "length_m": n.length_m}
-                for n in st.notes
-            ],
-            "source": st.source,
-            "generator": st.generator,
-            "runs": [p.name for p in runs_for_stage(st, runs_dir)],
-        }
+        return {**_stage_detail_dict(st), "runs": [p.name for p in runs_for_stage(st, runs_dir)]}
 
     @app.delete("/api/stages/{name}")
     async def stage_delete(name: str) -> dict:
@@ -745,6 +771,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
     # upload page, which turns a drag and drop into a pull request.
 
     app.state.fetch = _http_get  # tests swap this for a fake
+    app.state.post_json = _http_post_json
 
     def _community() -> tuple[str, str] | None:
         repo = str(cfg.get("community.repo", "") or "").strip()
@@ -771,6 +798,34 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
                 continue
             stages.append({**s, "installed": file[:-5] in installed})
         return {"available": True, "repo": repo, "url": f"https://github.com/{repo}", "stages": stages}
+
+    @app.get("/api/community/preview/{file}")
+    async def community_preview(file: str) -> dict:
+        """A shared stage's map and notes without installing it."""
+        from ..stage.schema import StageError, from_dict
+
+        target = _community()
+        if target is None:
+            raise HTTPException(400, "no community repo configured")
+        repo, branch = target
+        if not _SAFE_FILE.match(file):
+            raise HTTPException(400, f"not a stage file name: {file!r}")
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/stages/{file}"
+        try:
+            raw = await asyncio.get_running_loop().run_in_executor(None, lambda: app.state.fetch(url))
+            data = json.loads(raw)
+            stage = from_dict(data)
+        except StageError as exc:
+            raise HTTPException(502, f"the shared file is not a valid stage: {exc}") from exc
+        except Exception as exc:
+            raise HTTPException(502, f"download failed: {exc}") from exc
+        return {
+            **_stage_detail_dict(stage),
+            "runs": [],
+            "file": file,
+            "installed": (stages_dir / file).is_file(),
+            "community": data.get("community", {}) if isinstance(data.get("community"), dict) else {},
+        }
 
     @app.post("/api/community/install")
     async def community_install(body: dict) -> dict:
@@ -828,6 +883,33 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         share_dir.mkdir(parents=True, exist_ok=True)
         out = share_dir / f"{name}.json"
         out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+
+        # One click when a relay is configured: it opens the pull request for
+        # the player (relay/README.md). If it is down or refuses, fall back to
+        # the upload page and say why, rather than failing the share.
+        relay = str(cfg.get("community.relay_url", "") or "").strip()
+        relay_error = None
+        if relay:
+            try:
+                reply = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda: app.state.post_json(
+                        relay.rstrip("/") + "/share",
+                        {"file": f"{name}.json", "stage": data},
+                        60.0,
+                    ),
+                )
+                if not isinstance(reply, dict) or not reply.get("ok") or not reply.get("pr_url"):
+                    raise RuntimeError((reply or {}).get("error") if isinstance(reply, dict) else "relay gave no answer")
+                return {
+                    "ok": True, "via": "relay", "path": str(out),
+                    "pr_url": str(reply["pr_url"]), "updated": bool(reply.get("updated")),
+                }
+            except Exception as exc:
+                relay_error = str(exc)
+                logging.getLogger(__name__).warning(
+                    "community relay failed, falling back to the upload page: %s", exc
+                )
         upload_url = f"https://github.com/{repo}/upload/{branch}/stages"
         try:
             import os
@@ -839,7 +921,8 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             webbrowser.open(upload_url)
         except Exception:
             pass
-        return {"ok": True, "path": str(out), "upload_url": upload_url}
+        return {"ok": True, "via": "manual", "path": str(out), "upload_url": upload_url,
+                "relay_error": relay_error}
 
     # -- websocket -----------------------------------------------------------
 

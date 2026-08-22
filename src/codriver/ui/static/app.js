@@ -94,17 +94,58 @@ async function loadCommunity() {
     list.innerHTML = "";
     return;
   }
-  text.innerHTML = `Stages shared by other players, from <a href="${COMMUNITY.url}" target="_blank" rel="noopener">${COMMUNITY.repo}</a>. Install one and drive; Share yours with the button on the right.`;
+  text.innerHTML = `Stages shared by other players, from <a href="${COMMUNITY.url}" target="_blank" rel="noopener">${COMMUNITY.repo}</a>. Click one to preview it, Install to drive it. Share your own with the Share button on your stage.`;
   list.innerHTML = COMMUNITY.stages.map((s) =>
-    `<li><b>${s.name}</b><span class="muted"> ${fmtKm(s.length_m || 0)} km · ${s.notes || 0} notes${s.author ? " · by " + s.author : ""}</span>
+    `<li data-file="${s.file}" class="${currentCommunity === s.file ? "sel" : ""}">
+       <div class="li-main"><b>${s.name}</b><span class="muted"> ${fmtKm(s.length_m || 0)} km · ${s.notes || 0} notes${s.author ? " · by " + s.author : ""}</span></div>
        <button class="small-btn" data-install="${s.file}" ${s.installed ? "disabled" : ""}>${s.installed ? "installed" : "Install"}</button></li>`).join("")
     || "<li class='muted'>nothing shared yet. Be the first: build a stage and press Share.</li>";
+  list.querySelectorAll("li[data-file]").forEach((li) =>
+    li.addEventListener("click", (e) => { if (e.target.closest("button")) return; showCommunityStage(li.dataset.file); }));
   list.querySelectorAll("button[data-install]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      b.disabled = true; b.textContent = "installing…";
-      try { const r = await api("/api/community/install", "POST", { file: b.dataset.install }); b.textContent = "installed"; refreshState(); showStage(r.name); }
-      catch (x) { b.disabled = false; b.textContent = "Install"; alert(x.message); }
-    }));
+    b.addEventListener("click", (e) => { e.stopPropagation(); installCommunity(b.dataset.install, b); }));
+}
+
+async function installCommunity(file, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "installing…"; }
+  try {
+    const r = await api("/api/community/install", "POST", { file });
+    if (btn) btn.textContent = "installed";
+    currentCommunity = null;
+    await refreshState();
+    showStage(r.name);
+  } catch (x) {
+    if (btn) { btn.disabled = false; btn.textContent = "Install"; }
+    alert(x.message);
+  }
+}
+
+// A community stage, looked at before installing: same map, same notes, no
+// buttons that would only make sense for a stage on this PC.
+let currentCommunity = null;
+async function showCommunityStage(file) {
+  currentCommunity = file; currentStage = null;
+  document.querySelectorAll("#stage-list li").forEach((li) => li.classList.remove("sel"));
+  document.querySelectorAll("#community-list li").forEach((li) => li.classList.toggle("sel", li.dataset.file === file));
+  $("#stage-actions").hidden = true; $("#community-actions").hidden = true;
+  $("#stage-out").textContent = ""; $("#stage-notes").innerHTML = "";
+  $("#stage-title").textContent = "loading preview…";
+  let st;
+  try { st = await api(`/api/community/preview/${file}`); }
+  catch (x) { $("#stage-title").textContent = "preview failed"; $("#stage-out").textContent = x.message; return; }
+  const by = st.community && st.community.author ? ` · by ${st.community.author}` : "";
+  $("#stage-title").textContent = `${st.name}, ${fmtKm(st.length_m)} km, ${st.notes.length} notes${by} · community preview`;
+  const btn = $("#btn-install-preview");
+  btn.disabled = st.installed; btn.textContent = st.installed ? "already installed" : "Install this stage";
+  btn.onclick = () => installCommunity(file, btn);
+  $("#community-actions").hidden = false;
+  drawMap(st);
+  renderNotes(st);
+}
+
+function renderNotes(st) {
+  $("#stage-notes").innerHTML = st.notes.map((n) =>
+    `<tr><td>${fmtKm(n.at_m)}</td><td><b>${n.text}</b></td><td class="muted">${n.radius_m ? "r=" + n.radius_m.toFixed(0) + " m" : n.kind}${n.observed_kmh ? " · ~" + n.observed_kmh + " km/h" : ""}</td></tr>`).join("");
 }
 
 function setJobPill(job) {
@@ -224,8 +265,10 @@ function onRun(e) {
 
 // ---------------------------------------------------------------- stages
 async function showStage(name) {
-  currentStage = name;
+  currentStage = name; currentCommunity = null;
   document.querySelectorAll("#stage-list li").forEach((li) => li.classList.toggle("sel", li.dataset.name === name));
+  document.querySelectorAll("#community-list li").forEach((li) => li.classList.remove("sel"));
+  $("#community-actions").hidden = true;
   const st = await api(`/api/stages/${name}`);
   $("#stage-title").textContent = `${st.name}, ${fmtKm(st.length_m)} km, ${st.notes.length} notes`;
   $("#stage-actions").hidden = false;
@@ -233,8 +276,7 @@ async function showStage(name) {
   $("#btn-learn").disabled = st.runs.length === 0;
   $("#stage-out").textContent = "";
   drawMap(st);
-  $("#stage-notes").innerHTML = st.notes.map((n) =>
-    `<tr><td>${fmtKm(n.at_m)}</td><td><b>${n.text}</b></td><td class="muted">${n.radius_m ? "r=" + n.radius_m.toFixed(0) + " m" : n.kind}${n.observed_kmh ? " · ~" + n.observed_kmh + " km/h" : ""}</td></tr>`).join("");
+  renderNotes(st);
 }
 $("#btn-rebuild").onclick = async () => { $("#stage-out").textContent = "rebuilding…"; try { const r = await api(`/api/stages/${currentStage}/rebuild`, "POST"); $("#stage-out").textContent = r.report; showStage(currentStage); refreshState(); } catch (x) { $("#stage-out").textContent = "error: " + x.message; } };
 $("#btn-learn").onclick = async () => { $("#stage-out").textContent = "learning…"; try { const r = await api(`/api/stages/${currentStage}/learn`, "POST"); $("#stage-out").textContent = r.report; showStage(currentStage); refreshState(); } catch (x) { $("#stage-out").textContent = "error: " + x.message; } };
@@ -245,11 +287,20 @@ $("#btn-share").onclick = async () => {
   $("#stage-out").textContent = "preparing…";
   try {
     const r = await api(`/api/stages/${currentStage}/share`, "POST", { author });
-    $("#stage-out").textContent =
-      `Share file written: ${r.path}\n\n` +
-      `A browser tab with the community upload page should have opened (${r.upload_url}).\n` +
-      `Drag the file onto it, press "Propose changes", and GitHub turns it into a pull request.\n` +
-      `It appears in the Community list once it is merged. Thank you!`;
+    const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+    if (r.via === "relay") {
+      $("#stage-out").innerHTML =
+        `Shared. Pull request: <a href="${esc(r.pr_url)}" target="_blank" rel="noopener">${esc(r.pr_url)}</a>\n\n` +
+        `It appears in the Community list of every install once the maintainer merges it` +
+        (r.updated ? ` (this updates a stage that was shared before)` : ``) + `. Thank you!`;
+    } else {
+      $("#stage-out").textContent =
+        `Share file written: ${r.path}\n\n` +
+        (r.relay_error ? `The one-click relay did not answer (${r.relay_error}), so this is the manual way:\n` : ``) +
+        `A browser tab with the community upload page should have opened (${r.upload_url}).\n` +
+        `Drag the file from the folder that opened onto the page, press "Propose changes", and GitHub turns it into a pull request.\n` +
+        `It appears in the Community list once it is merged. Thank you!`;
+    }
   } catch (x) { $("#stage-out").textContent = "error: " + x.message; }
 };
 $("#btn-delete").onclick = async () => { if (!confirm(`delete stage ${currentStage}?`)) return; await api(`/api/stages/${currentStage}`, "DELETE"); currentStage = null; $("#stage-actions").hidden = true; $("#stage-title").textContent = "no stage selected"; $("#stage-notes").innerHTML = ""; MAP_STAGE = null; drawMap(); refreshState(); };

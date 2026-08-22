@@ -355,3 +355,88 @@ def test_a_fresh_clone_has_no_stages_folder_and_that_is_fine(client):
     assert r.status_code == 200, r.text
     assert (root / "stages" / "coast-road-sprint.json").is_file(), "install created the folder"
 
+
+def _shared_stage_fetch(root, name="coast-road-sprint", author="nils"):
+    """A fake community repo holding one stage, for preview and install tests."""
+    import json as _json
+
+    from codriver.stage.curvature import STRAIGHT
+    from codriver.stage.line import LinePoint
+    from codriver.stage.notes import Note
+    from codriver.stage.schema import Stage, to_dict
+
+    st = Stage(name=name,
+               line=[LinePoint(x=float(i) * 3, y=0.0, z=0.0) for i in range(40)],
+               markings=[STRAIGHT] * 40,
+               notes=[Note(at_m=30.0, tokens=["3", "right"], severity=3, direction="right")],
+               length_m=117.0)
+    data = to_dict(st)
+    data["community"] = {"race": name, "author": author}
+    index = {"stages": [{"file": f"{name}.json", "name": name, "length_m": 117.0, "notes": 1, "author": author}]}
+    return _fake_fetch({
+        "/index.json": _json.dumps(index).encode(),
+        f"/stages/{name}.json": _json.dumps(data).encode(),
+    })
+
+
+def test_community_preview_shows_a_stage_without_installing_it(client):
+    c, root, cfg = client
+    c.app.state.fetch = _shared_stage_fetch(root)
+
+    r = c.get("/api/community/preview/coast-road-sprint.json")
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert p["name"] == "coast-road-sprint"
+    assert len(p["line"]) == 40 and len(p["markings"]) == 40
+    assert [n["text"] for n in p["notes"]] == ["3 right"]
+    assert p["installed"] is False and p["runs"] == []
+    assert p["community"]["author"] == "nils"
+    assert not (root / "stages" / "coast-road-sprint.json").exists(), "a preview installs nothing"
+
+    assert c.get("/api/community/preview/Evil.json").status_code == 400
+    c.app.state.fetch = _fake_fetch({})
+    assert c.get("/api/community/preview/coast-road-sprint.json").status_code == 502
+
+
+def test_share_goes_through_the_relay_and_falls_back_to_the_upload_page(client, monkeypatch):
+    c, root, cfg = client
+    monkeypatch.setattr("webbrowser.open", lambda *a, **k: True)
+    write_synth(root / "recordings" / "s.fzr",
+                SynthSpec(shape="slalom", duration_s=40.0, speed_mps=18.0, size_m=60.0,
+                          pause_at_s=None, jump_at_s=None))
+    c.post("/api/build", json={"capture": "s.fzr", "name": "Coast Road Sprint"})
+    assert c.put("/api/config", json={"key": "community.relay_url", "value": "https://relay.example/"}).status_code == 200
+
+    posted = {}
+
+    def fake_post(url, payload, timeout_s=60.0):
+        posted["url"] = url
+        posted["payload"] = payload
+        return {"ok": True, "pr_url": "https://github.com/W0nt3x/codriver-stages/pull/9", "number": 9, "updated": False}
+
+    c.app.state.post_json = fake_post
+    r = c.post("/api/stages/coast-road-sprint/share", json={"author": "nils"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["via"] == "relay" and body["pr_url"].endswith("/pull/9") and body["updated"] is False
+    assert posted["url"] == "https://relay.example/share", "one slash, whatever the config says"
+    assert posted["payload"]["file"] == "coast-road-sprint.json"
+    assert posted["payload"]["stage"]["format"] == "codriver-stage"
+    assert posted["payload"]["stage"]["community"]["author"] == "nils"
+
+    def broken(url, payload, timeout_s=60.0):
+        raise OSError("connection refused")
+
+    c.app.state.post_json = broken
+    body = c.post("/api/stages/coast-road-sprint/share", json={"author": "nils"}).json()
+    assert body["via"] == "manual"
+    assert "connection refused" in body["relay_error"]
+    assert "upload/main/stages" in body["upload_url"]
+
+    def refused(url, payload, timeout_s=60.0):
+        return {"error": "stage has no notes"}
+
+    c.app.state.post_json = refused
+    body = c.post("/api/stages/coast-road-sprint/share", json={"author": "nils"}).json()
+    assert body["via"] == "manual" and "no notes" in body["relay_error"]
+

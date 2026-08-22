@@ -264,6 +264,11 @@ community:
   repo: "W0nt3x/codriver-stages"
   # Branch of that repo to read from.
   branch: "main"
+  # Web address of the community relay, the small service that turns Share
+  # into one click by opening the pull request for you (relay/README.md
+  # explains it). Empty means Share writes the file, opens the upload page,
+  # and you drag the file onto it yourself.
+  relay_url: ""
 
 logging:
   # How much the terminal prints: DEBUG, INFO, WARNING or ERROR.

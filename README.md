@@ -163,13 +163,21 @@ Forza; press **Install** and it is ready to drive. The files come from a
 public repository, [codriver-stages](https://github.com/W0nt3x/codriver-stages),
 that holds nothing but stage files and needs no account to read.
 
+Click a community stage to see its map and notes before you install it.
+
 Built a good one yourself? Press **Share** on the stage. codriver writes a
 clean copy (the line, the notes, the speeds you drove; no personal data and no
-recording) into `stages/share/`, opens that folder, and opens the upload page
-of the community repository in your browser. Drag the file from the folder
-onto the page, press *Propose changes*, and GitHub turns it into a pull
-request (you need a GitHub account for that step; it is free). Please name
-stages exactly like the race in Forza, so people find them.
+recording) into `stages/share/` and hands it to the community relay, a tiny
+service that opens the pull request for you. No account, no upload page; you
+get the link to the pull request, and the stage shows up in everyone's
+Community list once it is merged. Should the relay not answer, Share falls
+back to opening the folder and GitHub's upload page, and you drag the file
+onto it yourself (that step needs a free GitHub account). Please name stages
+exactly like the race in Forza, so people find them.
+
+Running your own community repository? The relay lives in [relay/](relay/),
+ten minutes to set up, and `community.repo` plus `community.relay_url` point
+the app at yours.
 
 ## Your phone as the HUD
 

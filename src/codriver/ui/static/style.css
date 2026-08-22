@@ -39,7 +39,8 @@ pre.log:empty { display: none; }
 .status { min-height: 1.4em; color: var(--accent); }
 #qr { width: 160px; height: 160px; background: #fff; padding: 6px; border-radius: 8px; display: block; margin: 8px 0; }
 .list { list-style: none; margin: 0; padding: 0; }
-.list li { padding: 8px; border-radius: 8px; cursor: pointer; }
+.list li { padding: 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.list li .li-main { flex: 1; min-width: 0; }
 .list li:hover, .list li.sel { background: #202531; }
 .tag { font-size: 11px; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
 #map { width: 100%; height: auto; background: #0b0d11; border-radius: 8px; display: block; cursor: grab; touch-action: none; }
@@ -88,6 +89,5 @@ details.tier .cfg-row:last-child { margin-bottom: 12px; }
 .cfg-input select { flex: 1; min-width: 0; }
 /* community + warnings */
 .warnbox { background: #2b2410; border: 1px solid var(--warn); color: #ffe28a; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
-.small-btn { padding: 3px 10px; font-size: 12px; margin-left: 8px; float: right; }
-.list li .small-btn { margin-top: -2px; }
+.small-btn { padding: 3px 10px; font-size: 12px; white-space: nowrap; flex: none; }
 .badge.restart { color: var(--bad); border-color: var(--bad); }
