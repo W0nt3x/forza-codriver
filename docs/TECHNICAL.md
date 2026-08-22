@@ -6,11 +6,14 @@ stage line, and speaks pace notes ahead of corners, like Richard Burns Rally
 or DiRT.
 
 No game files are touched, no memory is read, nothing is injected. Everything
-runs off the official "Data Out" feature. See docs/TECHNICAL.md for why that is a
-hard constraint rather than a preference.
+runs off the official "Data Out" feature. That is a hard constraint, not a
+preference: the game checks its own code for tampering, and online memory
+modification is a bannable offence across all Forza titles, so nothing here
+goes near either.
 
-**Status: complete.** Capture/replay, stage building, the live
-co-driver loop, and voice packs. Generate a voice once with TTS, and the
+**Status: early beta.** The core loop is complete: capture/replay, stage
+building, the live co-driver, voice packs, learning from drives, community
+stages. The numbers in it are tuned on a handful of stages, by one person. Generate a voice once with TTS, and the
 runtime concatenates the pre-rendered clips, no synthesis ever happens in
 the hot path.
 
@@ -194,8 +197,8 @@ python -m codriver voice check stages/my-stage.json
 python -m codriver voice say 100 left tightens 1
 ```
 
-`generate` speaks the whole the audio design vocabulary (~41 words) through TTS once,
-then applies the the audio design clip rules, silence trimmed hard at both ends, RMS
+`generate` speaks the whole vocabulary (42 words) through TTS once,
+then applies the clip rules, silence trimmed hard at both ends, RMS
 normalised across the bank, resampled to 48 kHz mono 16-bit, and writes
 `voices/default/` with a manifest. Default voice is `en-GB-RyanNeural` at
 +15% rate; co-drivers talk briskly. Runtime never touches TTS: phrases are
@@ -220,7 +223,7 @@ Packs are swappable directories: record your own clips, drop them in
 | `capture` | record raw datagrams to a `.fzr` file |
 | `synth` | generate a synthetic capture |
 | `info` | summarise a capture: rate, packet sizes, stream gaps |
-| `verify` | run the the development rules layout checks against a capture |
+| `verify` | run the packet-layout checks against a capture |
 | `decode` | export a capture to NDJSON, one row per frame |
 | `replay` | pump a capture back out over UDP at original timing |
 | `run` | the co-driver: localise on a stage and speak its notes |
@@ -255,7 +258,7 @@ only the keys you are changing, it is deep-merged on top, gitignored, and a
 key that doesn't exist in `defaults.yaml` is reported as a probable typo
 rather than silently ignored.
 
-The file carries the full the note algorithm/the runtime design/the audio design key set. Every section is read by the part of the pipeline it names.
+The file carries every key for stage building, runtime and audio. Every section is read by the part of the pipeline it names.
 
 ---
 
@@ -272,7 +275,7 @@ src/codriver/
   record/capture.py         .fzr raw datagram log
   record/replay.py          deadline-scheduled UDP playback
   record/synth.py           synthetic captures
-  record/verify.py          the the development rules empirical checks
+  record/verify.py          the empirical packet checks
   stage/line.py             capture -> driving segments -> raw line
   stage/resample.py         step 0 of the note algorithm: subdivide, smooth, space evenly
   stage/curvature.py        step 1 of the note algorithm: circle fit -> severity class
@@ -285,7 +288,7 @@ src/codriver/
   runtime/scheduler.py      trigger timing and queue discipline
   runtime/player.py         beep bank + low-latency output stream
   runtime/run.py            the live loop, hot-reloading config
-  voice/vocab.py            token -> spoken text, the the audio design vocabulary
+  voice/vocab.py            token -> spoken text, the vocabulary
   voice/pack.py             manifest, loader, WavBank
   voice/generate.py         TTS generation + the audio design clip post-processing
   cli/                      one module per command group
@@ -367,6 +370,15 @@ checks out: `CurrentRaceTime` advances at 1.0000, `Fuel` sits in 0..1), it
 simply does not count metres. The runtime already avoids it as a primary
 signal; treat it as not being a distance at all. Stage distance is computed by
 integrating the resampled line, which is unaffected.
+
+Two hypotheses tested against the captures on hand, both refuted. "Route
+progress rather than odometer" would make the ratio drop where the car
+weaves; per 100 m window it is 0.791 on straight windows and 0.797 on windows
+with more than 40 degrees of heading change, the same. "A fixed unit" would
+make it the same on every drive; it is 0.79 on one capture and 1.03 on
+another, constant within each. So it is a per-session scale, plausibly
+per-car (wheel-based odometer against a nominal tyre radius would behave like
+this), and still not a distance the runtime can use.
 
 **`WheelInPuddle` type is unsettled.** the Data Out spec types offset 132 as `S32`;
 the official Forza sled spec types the same 16 bytes as `f32`

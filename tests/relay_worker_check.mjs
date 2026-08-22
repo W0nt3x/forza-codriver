@@ -105,6 +105,18 @@ assert.equal(r.status, 200);
 const healthSecret = await (await worker.fetch(new Request("https://relay.example/"), envSecret)).json();
 assert.equal(healthSecret.secret_required, true);
 
+// one address gets ten shares an hour, the eleventh is told to wait
+calls.length = 0;
+for (let i = 0; i < 10; i++) {
+  r = await post({ file: "coast-road-sprint.json", stage }, { "cf-connecting-ip": "203.0.113.9" });
+  assert.equal(r.status, 200, `share ${i + 1} should pass`);
+}
+r = await post({ file: "coast-road-sprint.json", stage }, { "cf-connecting-ip": "203.0.113.9" });
+assert.equal(r.status, 429);
+assert.equal(calls.length, 10 * 5, "the refused share never reached GitHub");
+r = await post({ file: "coast-road-sprint.json", stage }, { "cf-connecting-ip": "203.0.113.10" });
+assert.equal(r.status, 200, "another address is unaffected");
+
 // GitHub refusing the token is reported, not swallowed
 globalThis.fetch = async () => new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
 r = await post({ file: "coast-road-sprint.json", stage });

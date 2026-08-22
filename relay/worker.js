@@ -26,8 +26,25 @@ const MAX_BYTES = 3 * 1024 * 1024;
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, x-codriver-secret",
 };
+
+// Shares per address per hour. In-memory, so per isolate and best effort; a
+// Cloudflare rate-limiting rule in front is the real thing (see SETUP.md).
+// Nobody shares ten stages an hour by hand; a script that does is not a player.
+const RATE_MAX = 10;
+const RATE_WINDOW_MS = 60 * 60 * 1000;
+/** @type {Map<string, number[]>} */
+const recent = new Map();
+
+function rateLimited(ip, now) {
+  const stamps = (recent.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (stamps.length >= RATE_MAX) { recent.set(ip, stamps); return true; }
+  stamps.push(now);
+  recent.set(ip, stamps);
+  if (recent.size > 5000) recent.clear(); // never grow without bound
+  return false;
+}
 
 export default {
   async fetch(request, env) {
@@ -53,6 +70,10 @@ export default {
     }
     const declared = Number(request.headers.get("content-length") || 0);
     if (declared > MAX_BYTES) return json({ error: "stage file too large" }, 413);
+    const ip = request.headers.get("cf-connecting-ip") || "unknown";
+    if (rateLimited(ip, Date.now())) {
+      return json({ error: `too many shares from this address, the relay takes ${RATE_MAX} per hour` }, 429);
+    }
 
     let body;
     try {

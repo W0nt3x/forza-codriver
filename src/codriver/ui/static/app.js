@@ -192,7 +192,11 @@ function onScan(e) {
   if (e.kind === "scan_started") log(out, `listening on ${e.ports} ports for ${e.duration}s. Drive now…`);
   if (e.kind === "scan_hit") log(out, `✔ packets on port ${e.port}${e.looks_like_fh6 ? ", that's Forza" : ""}`);
   if (e.kind === "scan_done") {
-    if (!e.found.length) log(out, "nothing received. Data Out on? IP 127.0.0.1? Were you driving?");
+    if (!e.found.length) {
+      const lo = e.reserved ? e.reserved[0] : 5200, hi = e.reserved ? e.reserved[1] : 5300;
+      log(out, `nothing received on the ports this scan may use. It deliberately stays out of ${lo}-${hi}: listening there can break Data Out itself.`);
+      log(out, `So if Data Out is on, IP is 127.0.0.1 and you were driving, the game is almost certainly set to a port in that range (the guides all say 5300). In Forza set Data Out IP Port to ${e.configured}, then drive and press Check again.`);
+    }
     else {
       const best = e.found[0];
       log(out, best.port === e.configured

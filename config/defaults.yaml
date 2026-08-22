@@ -265,13 +265,17 @@ community:
   # Branch of that repo to read from.
   branch: "main"
   # Web address of the community relay, the small service that turns Share
-  # into one click by opening the pull request for you (relay/README.md
-  # explains it). Empty means Share writes the file, opens the upload page,
+  # into one click by opening the pull request for you (the relay/ folder
+  # holds it). Empty means Share writes the file, opens the upload page,
   # and you drag the file onto it yourself.
   relay_url: "https://codriver-relay.wontex81.workers.dev/"
   # Sent along with every share as a header, and the relay only accepts shares
-  # that carry it. Keeps strangers and scanners off the relay. Must match the
-  # SHARE_SECRET set on the relay; empty sends nothing.
+  # that carry it. This value is public on purpose: it sits in this file in a
+  # public repository so that every install can share with one click. It is
+  # not a leaked secret, it is a bot filter. It keeps scanners and strangers
+  # who never looked at the code off the relay; the relay itself can do
+  # nothing but open pull requests on the community repository, which a human
+  # merges. Must match the SHARE_SECRET set on the relay; empty sends nothing.
   relay_secret: "yZS4qBAqb9SyrZ4WCyKh1nyJmKFIqtxCpayUkrSrn0VJwemywkgw7lTgNk0XFHE2MBqV0COzjVazYhRZL5xElXhERr7qgrZzH6EU3jJ2CdCGqq7rC0a483aF9z5Ud7n8bOG8yESLpzQ879VFf5sZKFLaGNhu28T9umwMsf64glkuyJakXZrCBjm56tLVYXPlzTIHbAG1FENwIsPT0nfrL0id6vlVm2rLKYSvBs6Adyhn1DREf35ZbJkwACWuEz8JYHUhFKizAAyfnCUZQa7MkW1mKT6Qxa0hriy3Zi7ATAHDYau9A7BmIUfE2NVt1H27"
 
 logging:

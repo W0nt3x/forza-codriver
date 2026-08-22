@@ -155,8 +155,9 @@ def test_paths_resolve_against_the_project_root_not_the_cwd(cfg_dir, tmp_path, m
     find them there wherever the process was started from. Seen live: a voice
     pack generated in the UI came back as beeps because `run` looked in the
     current working directory."""
+    absolute = tmp_path / "abs" / "recordings"  # absolute on every platform
     (cfg_dir / "defaults.yaml").write_text(
-        yaml.safe_dump({"audio": {"voices_dir": "voices"}, "capture": {"dir": "C:/abs/recordings"}}),
+        yaml.safe_dump({"audio": {"voices_dir": "voices"}, "capture": {"dir": str(absolute)}}),
         encoding="utf-8",
     )
     cfg = Config.load(cfg_dir)
@@ -165,4 +166,4 @@ def test_paths_resolve_against_the_project_root_not_the_cwd(cfg_dir, tmp_path, m
     monkeypatch.chdir(elsewhere)
     assert cfg.root == cfg_dir.parent
     assert cfg.path("audio.voices_dir") == cfg_dir.parent / "voices"
-    assert cfg.path("capture.dir").as_posix() == "C:/abs/recordings"
+    assert cfg.path("capture.dir") == absolute, "an absolute path is left alone"

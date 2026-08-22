@@ -272,10 +272,12 @@ Have a wish that is not on the list? Open an issue.
 ## When something doesn't work
 
 - **"Waiting for telemetry" forever.** Press **Check** on the Setup tab
-  while driving. It scans the likely ports and tells you where the game is
-  actually sending. Nine times out of ten the game is still on port 5300, or
-  Data Out is off. And you have to be *driving*: menus, pauses and replays
-  send nothing.
+  while driving. It listens on the likely ports and tells you whether the
+  game is sending, and where. It deliberately stays out of 5200 to 5300,
+  because listening there can break Data Out itself; so if it finds nothing
+  although you were driving, the game is almost certainly still on 5300, the
+  port every guide recommends. Set it to 5400 in Forza. And you have to be
+  *driving*: menus, pauses and replays send nothing.
 - **Calls feel late or early.** `runtime.trigger.reaction_buffer_s`. Applies
   live, so you can adjust it mid-race.
 - **Corners that aren't there.** Your recon line wobbled. Raise

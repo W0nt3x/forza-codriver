@@ -559,6 +559,8 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
                 "found": [{"port": h.port, "packets": h.packets, "fh6": h.looks_like_fh6}
                           for h in result.found],
                 "refused": sorted(result.refused),
+                "skipped_reserved": sorted(result.skipped_reserved),
+                "reserved": [scanner.RESERVED_LO, scanner.RESERVED_HI],
                 "configured": configured,
             })
             return result
