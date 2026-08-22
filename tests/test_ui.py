@@ -530,6 +530,54 @@ def test_a_domain_name_in_the_host_header_is_refused(client):
     for ok in ("localhost:8777", "localhost", "127.0.0.1:8777", "192.168.2.44:8777",
                "[::1]:8777", "gaming-pc.localhost:8777"):
         assert c.get("/api/state", headers={"host": ok}).status_code == 200, ok
+    for bind_only in ("0.0.0.0:8777", "[::]:8777"):
+        assert c.get("/api/state", headers={"host": bind_only}).status_code == 400, bind_only
+
+
+def test_a_browser_origin_must_match_the_host_it_talks_to(client):
+    """Rebinding, second line: once a page is same-origin it can set the
+    X-Codriver header itself. But its Origin is still the attacker's name,
+    while Host is this PC. The real page has Origin == Host, always."""
+    c, root, cfg = client
+    page = {"X-Codriver": "1", "host": "127.0.0.1:8777"}
+    assert c.post("/api/stop", headers={**page, "origin": "http://127.0.0.1:8777"}).status_code != 403
+    assert c.post("/api/stop", headers={**page, "origin": "http://evil.example"}).status_code == 403
+    assert c.post("/api/stop", headers={**page, "origin": "http://192.168.2.44:8777"}).status_code == 403, \
+        "another address of this very PC is still not the page that was opened"
+    assert c.post("/api/stop", headers={**page, "origin": "null"}).status_code == 403
+    assert c.put("/api/config", json={"key": "telemetry.port", "value": 5300},
+                 headers={**page, "origin": "http://evil.example"}).status_code == 403
+    assert cfg.get("telemetry.port") == 5400
+    # reads are not gated by origin: a page that can read them is same-origin anyway
+    assert c.get("/api/state", headers={"host": "127.0.0.1:8777", "origin": "http://evil.example"}).status_code == 200
+
+
+def test_a_missing_host_header_is_refused_on_http_1_1():
+    """Browsers always send Host. The guard is exercised directly, because no
+    HTTP client worth the name lets a test omit it."""
+    import asyncio
+
+    from codriver.ui.server import BrowserGuard
+
+    sent = []
+
+    async def inner(scope, receive, send):
+        sent.append("reached app")
+
+    async def receive():
+        return {"type": "http.request"}
+
+    async def send(message):
+        sent.append(message)
+
+    guard = BrowserGuard(inner)
+    scope = {"type": "http", "method": "GET", "path": "/api/state", "http_version": "1.1", "headers": []}
+    asyncio.run(guard(scope, receive, send))
+    assert sent and sent[0]["type"] == "http.response.start" and sent[0]["status"] == 400
+    sent.clear()
+    scope["http_version"] = "1.0"
+    asyncio.run(guard(scope, receive, send))
+    assert sent == ["reached app"]
 
 
 def test_websocket_accepts_the_page_and_refuses_foreign_origins(client):
@@ -539,13 +587,16 @@ def test_websocket_accepts_the_page_and_refuses_foreign_origins(client):
     host = {"host": "127.0.0.1:8777"}
     with c.websocket_connect("/ws", headers={**host, "origin": "http://127.0.0.1:8777"}):
         pass
-    with c.websocket_connect("/ws", headers={**host, "origin": "http://192.168.2.44:8777"}):
+    with c.websocket_connect("/ws", headers={"host": "192.168.2.44:8777", "origin": "http://192.168.2.44:8777"}):
         pass
     with pytest.raises(Exception):
         with c.websocket_connect("/ws", headers={**host, "origin": "http://evil.example"}):
             pass
     with pytest.raises(Exception):  # rebinding: a domain name as Host
         with c.websocket_connect("/ws", headers={"host": "evil.example:8777"}):
+            pass
+    with pytest.raises(Exception):  # origin is an IP, but not the one the page was opened at
+        with c.websocket_connect("/ws", headers={**host, "origin": "http://192.168.2.44:8777"}):
             pass
 
 

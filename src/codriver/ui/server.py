@@ -363,10 +363,14 @@ def _http_get(url: str, timeout_s: float = 8.0, max_bytes: int = MAX_DOWNLOAD_BY
 #   a custom header on every state-changing request turns it into a request
 #   that needs a CORS preflight, and nothing here answers preflights.
 # * DNS rebinding: a page whose domain first resolves to the attacker and, a
-#   minute later, to 127.0.0.1 becomes same-origin with the API and may read
-#   everything. The UI is only ever opened as localhost or an IP address, so a
-#   DNS name in the Host header is never legitimate and is refused outright.
-# * The same for the WebSocket: its Origin must be localhost or an IP.
+#   minute later, to this PC becomes same-origin with the API, may read
+#   everything, and can set the custom header itself. Two things stop it.
+#   The UI is only ever opened as localhost or an IP address, so a domain
+#   name in the Host header is refused outright. And when a browser sends an
+#   Origin, its host must equal the Host header: the real page's Origin and
+#   Host are the same address, a rebinding page's Origin is the attacker's
+#   domain while Host is this PC. Checked on every state-changing request
+#   and on the WebSocket handshake.
 # --------------------------------------------------------------------------
 
 PAGE_HEADER = "x-codriver"
@@ -374,18 +378,20 @@ _MUTATING = {"POST", "PUT", "DELETE", "PATCH"}
 
 
 def _hostname_ok(name: str) -> bool:
+    """localhost, *.localhost, or a real IP literal. Nothing else is ever a
+    legitimate way to open the UI."""
     import ipaddress
 
     name = (name or "").strip().lower().strip("[]")
     if not name:
-        return True  # no Host at all: not a browser
+        return False
     if name == "localhost" or name.endswith(".localhost"):
         return True
     try:
-        ipaddress.ip_address(name)
-        return True
+        addr = ipaddress.ip_address(name)
     except ValueError:
         return False
+    return not addr.is_unspecified  # 0.0.0.0 is a bind address, not a page
 
 
 def _host_header_ok(host: str) -> bool:
@@ -397,15 +403,16 @@ def _host_header_ok(host: str) -> bool:
     return _hostname_ok(host)
 
 
-def _origin_ok(origin: str | None) -> bool:
+def _origin_matches_host(origin: str, host: str) -> bool:
+    """The Origin's host[:port] must be the Host header, character for
+    character after lowercasing. "null" and foreign names fail here."""
     from urllib.parse import urlsplit
 
-    if not origin:
-        return True  # no Origin: not a browser page
     try:
-        return _hostname_ok(urlsplit(origin).hostname or "")
+        netloc = urlsplit(origin.strip()).netloc
     except ValueError:
         return False
+    return bool(netloc) and netloc.lower() == host.strip().lower()
 
 
 class BrowserGuard:
@@ -418,15 +425,25 @@ class BrowserGuard:
         if scope["type"] not in ("http", "websocket"):
             return await self.app(scope, receive, send)
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
-        if not _host_header_ok(headers.get("host", "")):
+        host = headers.get("host", "").strip()
+        if not host:
+            # Every HTTP/1.1 client, browsers first of all, sends Host. Only an
+            # HTTP/1.0 tool may leave it out.
+            if scope.get("http_version", "1.1") != "1.0":
+                return await self._reject(scope, receive, send, 400, "no Host header")
+        elif not _host_header_ok(host):
             return await self._reject(scope, receive, send, 400,
                                       "open the UI as localhost or an IP address, not a domain name")
+        origin = headers.get("origin")
         if scope["type"] == "http":
-            if (scope.get("method", "GET") in _MUTATING and scope.get("path", "").startswith("/api/")
-                    and headers.get(PAGE_HEADER) != "1"):
-                return await self._reject(scope, receive, send, 403,
-                                          "state-changing requests must come from the codriver page (X-Codriver header)")
-        elif not _origin_ok(headers.get("origin")):
+            if scope.get("method", "GET") in _MUTATING and scope.get("path", "").startswith("/api/"):
+                if headers.get(PAGE_HEADER) != "1":
+                    return await self._reject(scope, receive, send, 403,
+                                              "state-changing requests must come from the codriver page (X-Codriver header)")
+                if origin is not None and not _origin_matches_host(origin, host):
+                    return await self._reject(scope, receive, send, 403,
+                                              "request origin does not match the address this UI was opened at")
+        elif origin is not None and not _origin_matches_host(origin, host):
             return await self._reject(scope, receive, send, 403, "foreign origin")
         await self.app(scope, receive, send)
 
@@ -442,52 +459,6 @@ class BrowserGuard:
             (b"content-length", str(len(body)).encode("ascii")),
         ]})
         await send({"type": "http.response.body", "body": body})
-
-
-def _http_post_json(
-    url: str, payload: dict, timeout_s: float = 60.0, headers: dict | None = None
-) -> dict:
-    """POST JSON, get JSON. An HTTP error carries the server's own message,
-    which for the relay is the reason a share was refused."""
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=body, method="POST",
-        headers={"User-Agent": "codriver", "Content-Type": "application/json", **(headers or {})},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            return json.loads(resp.read() or b"{}")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")
-        try:
-            detail = json.loads(detail).get("error") or detail
-        except Exception:
-            pass
-        raise RuntimeError(f"{exc.code}: {detail[:300]}") from None
-
-
-def _stage_detail_dict(st) -> dict:
-    """What the Stages tab draws: line, markings, notes. Shared by a stage on
-    disk and a community preview, so both look the same on the map."""
-    return {
-        "name": st.name,
-        "length_m": st.length_m,
-        "spacing_m": st.spacing_m,
-        "line": [[round(p.x, 1), round(p.z, 1)] for p in st.line],
-        "markings": [m.label for m in st.markings],
-        "notes": [
-            {"at_m": n.at_m, "text": n.text, "index": n.index, "kind": n.kind,
-             "severity": n.severity, "radius_m": n.radius_m,
-             "observed_kmh": n.observed_kmh, "length_m": n.length_m}
-            for n in st.notes
-        ],
-        "source": st.source,
-        "generator": st.generator,
-    }
-
 
 def lan_ip() -> str:
     """The address a phone on the same network should use. No packet is sent
