@@ -45,7 +45,10 @@ export default {
     if (!env.GITHUB_TOKEN || !env.REPO) {
       return json({ error: "relay not configured: set REPO and the GITHUB_TOKEN secret" }, 500);
     }
-    if (env.SHARE_SECRET && request.headers.get("x-codriver-secret") !== env.SHARE_SECRET) {
+    // Both sides trimmed: a secret pasted into a dashboard often brings a
+    // line break along, and that must not turn into a silent 403.
+    const wanted = (env.SHARE_SECRET || "").trim();
+    if (wanted && (request.headers.get("x-codriver-secret") || "").trim() !== wanted) {
       return json({ error: "relay refused the share: wrong or missing secret (community.relay_secret)" }, 403);
     }
     const declared = Number(request.headers.get("content-length") || 0);
