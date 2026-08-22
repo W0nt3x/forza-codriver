@@ -308,8 +308,7 @@ is their trademark.*
 codriver is free and stays free. It is built and tuned by one person in the
 evenings, and the telemetry captures, the stage drives and the occasional
 broken voice pack all cost real hours. If it makes your rallies better and
-you feel like it: [ko-fi.com/wontex](https://ko-fi.com/wontex). No obligation,
-no features behind it, just coffee.
+you feel like it: [ko-fi.com/wontex](https://ko-fi.com/wontex).
 
 ## Credits
 
