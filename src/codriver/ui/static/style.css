@@ -47,6 +47,9 @@ pre.log:empty { display: none; }
 #map.dragging { cursor: grabbing; }
 .maphint { justify-content: flex-end; margin-top: 6px; }
 .maphint button { padding: 2px 10px; font-size: 12px; }
+footer { text-align: center; padding: 18px 16px 28px; border-top: 1px solid var(--line); margin-top: 24px; }
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
 .legend { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .sw { display: inline-block; width: 14px; height: 8px; border-radius: 2px; margin: 0 3px 0 10px; vertical-align: middle; }
 .c1 { background: #ff3b30 } .c2 { background: #ff7a1a } .c3 { background: #ffcc00 } .c4 { background: #4cd964 } .c5 { background: #2fb3ff } .c6 { background: #8e6bff } .cs { background: #a0a0a8 }

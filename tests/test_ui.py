@@ -406,12 +406,14 @@ def test_share_goes_through_the_relay_and_falls_back_to_the_upload_page(client, 
                           pause_at_s=None, jump_at_s=None))
     c.post("/api/build", json={"capture": "s.fzr", "name": "Coast Road Sprint"})
     assert c.put("/api/config", json={"key": "community.relay_url", "value": "https://relay.example/"}).status_code == 200
+    assert c.put("/api/config", json={"key": "community.relay_secret", "value": "s3cret"}).status_code == 200
 
     posted = {}
 
-    def fake_post(url, payload, timeout_s=60.0):
+    def fake_post(url, payload, timeout_s=60.0, headers=None):
         posted["url"] = url
         posted["payload"] = payload
+        posted["headers"] = headers
         return {"ok": True, "pr_url": "https://github.com/W0nt3x/codriver-stages/pull/9", "number": 9, "updated": False}
 
     c.app.state.post_json = fake_post
@@ -423,8 +425,9 @@ def test_share_goes_through_the_relay_and_falls_back_to_the_upload_page(client, 
     assert posted["payload"]["file"] == "coast-road-sprint.json"
     assert posted["payload"]["stage"]["format"] == "codriver-stage"
     assert posted["payload"]["stage"]["community"]["author"] == "nils"
+    assert posted["headers"] == {"X-Codriver-Secret": "s3cret"}
 
-    def broken(url, payload, timeout_s=60.0):
+    def broken(url, payload, timeout_s=60.0, headers=None):
         raise OSError("connection refused")
 
     c.app.state.post_json = broken
@@ -433,7 +436,7 @@ def test_share_goes_through_the_relay_and_falls_back_to_the_upload_page(client, 
     assert "connection refused" in body["relay_error"]
     assert "upload/main/stages" in body["upload_url"]
 
-    def refused(url, payload, timeout_s=60.0):
+    def refused(url, payload, timeout_s=60.0, headers=None):
         return {"error": "stage has no notes"}
 
     c.app.state.post_json = refused

@@ -331,7 +331,9 @@ def _http_get(url: str, timeout_s: float = 8.0) -> bytes:
         return resp.read()
 
 
-def _http_post_json(url: str, payload: dict, timeout_s: float = 60.0) -> dict:
+def _http_post_json(
+    url: str, payload: dict, timeout_s: float = 60.0, headers: dict | None = None
+) -> dict:
     """POST JSON, get JSON. An HTTP error carries the server's own message,
     which for the relay is the reason a share was refused."""
     import urllib.error
@@ -340,7 +342,7 @@ def _http_post_json(url: str, payload: dict, timeout_s: float = 60.0) -> dict:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url, data=body, method="POST",
-        headers={"User-Agent": "codriver", "Content-Type": "application/json"},
+        headers={"User-Agent": "codriver", "Content-Type": "application/json", **(headers or {})},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
@@ -888,6 +890,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         # the player (relay/README.md). If it is down or refuses, fall back to
         # the upload page and say why, rather than failing the share.
         relay = str(cfg.get("community.relay_url", "") or "").strip()
+        secret = str(cfg.get("community.relay_secret", "") or "").strip()
         relay_error = None
         if relay:
             try:
@@ -897,6 +900,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
                         relay.rstrip("/") + "/share",
                         {"file": f"{name}.json", "stage": data},
                         60.0,
+                        {"X-Codriver-Secret": secret} if secret else None,
                     ),
                 )
                 if not isinstance(reply, dict) or not reply.get("ok") or not reply.get("pr_url"):

@@ -12,6 +12,8 @@ three"*. English or German.
 > [open an issue](https://github.com/W0nt3x/forza-codriver/issues)
 > and say what you did; recordings make almost everything reproducible.
 
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/wontex)
+
 ## Why this exists
 
 I love the point-to-point races in Horizon, but they always felt like half a
@@ -175,9 +177,10 @@ back to opening the folder and GitHub's upload page, and you drag the file
 onto it yourself (that step needs a free GitHub account). Please name stages
 exactly like the race in Forza, so people find them.
 
-Running your own community repository? The relay lives in [relay/](relay/),
-ten minutes to set up, and `community.repo` plus `community.relay_url` point
-the app at yours.
+Running your own community repository? The relay is a small Cloudflare
+Worker in [relay/](relay/) (the header of `worker.js` lists what it needs),
+and `community.repo`, `community.relay_url` and `community.relay_secret`
+point the app at yours.
 
 ## Your phone as the HUD
 
@@ -299,6 +302,14 @@ Have a wish that is not on the list? Open an issue.
 
 *Not affiliated with Microsoft, Turn 10 or Playground Games. Forza Horizon
 is their trademark.*
+
+## Support
+
+codriver is free and stays free. It is built and tuned by one person in the
+evenings, and the telemetry captures, the stage drives and the occasional
+broken voice pack all cost real hours. If it makes your rallies better and
+you feel like it: [ko-fi.com/wontex](https://ko-fi.com/wontex). No obligation,
+no features behind it, just coffee.
 
 ## Credits
 

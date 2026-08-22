@@ -39,7 +39,7 @@ assert.match(validate({ file: "x.json", stage: { ...stage, format: "gpx" } }), /
 
 // health
 const health = await (await worker.fetch(new Request("https://relay.example/"), env)).json();
-assert.deepEqual(health, { ok: true, service: "codriver-relay", repo: env.REPO, configured: true });
+assert.deepEqual(health, { ok: true, service: "codriver-relay", repo: env.REPO, configured: true, secret_required: false });
 
 // an unconfigured relay says so instead of touching GitHub
 const unconf = await worker.fetch(new Request("https://relay.example/share", { method: "POST", body: "{}" }), { REPO: env.REPO });
@@ -88,6 +88,22 @@ assert.equal(r.status, 400);
 assert.equal(calls.length, 0);
 r = await post({ file: "coast-road-sprint.json", stage }, { "content-length": String(10 * 1024 * 1024) });
 assert.equal(r.status, 413);
+
+// with SHARE_SECRET set, the header has to match; nothing reaches GitHub otherwise
+calls.length = 0;
+const envSecret = { ...env, SHARE_SECRET: "s3cret" };
+const postSecret = (headers) => worker.fetch(new Request("https://relay.example/share", {
+  method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ file: "coast-road-sprint.json", stage }),
+}), envSecret);
+r = await postSecret({});
+assert.equal(r.status, 403);
+r = await postSecret({ "x-codriver-secret": "wrong" });
+assert.equal(r.status, 403);
+assert.equal(calls.length, 0, "refused before GitHub");
+r = await postSecret({ "x-codriver-secret": "s3cret" });
+assert.equal(r.status, 200);
+const healthSecret = await (await worker.fetch(new Request("https://relay.example/"), envSecret)).json();
+assert.equal(healthSecret.secret_required, true);
 
 // GitHub refusing the token is reported, not swallowed
 globalThis.fetch = async () => new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });

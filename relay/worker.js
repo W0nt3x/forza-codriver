@@ -16,6 +16,10 @@
 //   BRANCH        base branch, usually "main"
 //   GITHUB_TOKEN  secret. A fine-grained token limited to that one repository with
 //                 Contents: read and write, Pull requests: read and write.
+//   SHARE_SECRET  secret, optional. When set, a share must carry the same value in
+//                 the X-Codriver-Secret header (the app sends community.relay_secret).
+//                 Keeps scanners and strangers off the relay; the app is open source,
+//                 so it is a filter, not a lock. Merging by hand remains the lock.
 
 const SAFE_FILE = /^[a-z0-9][a-z0-9\-]{0,80}\.json$/;
 const MAX_BYTES = 3 * 1024 * 1024;
@@ -30,13 +34,19 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     const url = new URL(request.url);
     if (request.method === "GET") {
-      return json({ ok: true, service: "codriver-relay", repo: env.REPO || null, configured: Boolean(env.GITHUB_TOKEN && env.REPO) });
+      return json({
+        ok: true, service: "codriver-relay", repo: env.REPO || null,
+        configured: Boolean(env.GITHUB_TOKEN && env.REPO), secret_required: Boolean(env.SHARE_SECRET),
+      });
     }
     if (request.method !== "POST" || url.pathname !== "/share") {
       return json({ error: "use POST /share" }, 404);
     }
     if (!env.GITHUB_TOKEN || !env.REPO) {
       return json({ error: "relay not configured: set REPO and the GITHUB_TOKEN secret" }, 500);
+    }
+    if (env.SHARE_SECRET && request.headers.get("x-codriver-secret") !== env.SHARE_SECRET) {
+      return json({ error: "relay refused the share: wrong or missing secret (community.relay_secret)" }, 403);
     }
     const declared = Number(request.headers.get("content-length") || 0);
     if (declared > MAX_BYTES) return json({ error: "stage file too large" }, 413);

@@ -269,6 +269,10 @@ community:
   # explains it). Empty means Share writes the file, opens the upload page,
   # and you drag the file onto it yourself.
   relay_url: ""
+  # Sent along with every share as a header, and the relay only accepts shares
+  # that carry it. Keeps strangers and scanners off the relay. Must match the
+  # SHARE_SECRET set on the relay; empty sends nothing.
+  relay_secret: ""
 
 logging:
   # How much the terminal prints: DEBUG, INFO, WARNING or ERROR.

@@ -29,6 +29,9 @@ voices/*/
 CLAUDE.md
 .claude/
 
+# How the community relay is set up, with the account details. Private.
+relay/SETUP.md
+
 # Editors and OS
 .vscode/
 .idea/

@@ -1,7 +1,8 @@
 # Cloudflare Worker config for the codriver community relay.
 # Deploy with:  npx wrangler deploy          (from this folder, after `npx wrangler login`)
-# Secret:       npx wrangler secret put GITHUB_TOKEN
-# Or skip wrangler entirely and paste worker.js into the Cloudflare dashboard; see README.md.
+# Secrets:      npx wrangler secret put GITHUB_TOKEN
+#               npx wrangler secret put SHARE_SECRET     (optional, see the header of worker.js)
+# Or skip wrangler entirely and paste worker.js into the Cloudflare dashboard.
 name = "codriver-relay"
 main = "worker.js"
 compatibility_date = "2025-01-01"
