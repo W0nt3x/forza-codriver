@@ -289,3 +289,23 @@ def test_restart_badge_marks_what_is_read_only_at_start(client):
     assert by_key["runtime.trigger.reaction_buffer_s"]["needs_restart"] is False
     assert by_key["audio.crossfade_ms"]["needs_restart"] is False
     assert by_key["stage.curvature.window_points"]["needs_restart"] is False
+
+
+def test_state_names_the_words_a_voice_pack_is_missing(client):
+    """A pack generated before a word joined the vocabulary plays that word
+    as a beep. The state must say which words, so the UI can point at
+    Generate instead of leaving someone to hear a beep at a ford."""
+    from codriver.voice.vocab import VOCABULARY
+
+    c, root, cfg = client
+    pack = root / "voices" / "old"
+    pack.mkdir()
+    tokens = {t: f"{t}.wav" for t in VOCABULARY if t != "water"}
+    (pack / "manifest.yaml").write_text(
+        yaml.safe_dump({"name": "old", "language": "en", "tokens": tokens}),
+        encoding="utf-8",
+    )
+    s = c.get("/api/state").json()
+    assert s["voices"] == ["old"]
+    assert s["voice_gaps"] == {"old": ["water"]}
+

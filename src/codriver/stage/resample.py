@@ -49,7 +49,7 @@ def lerp_point(a: LinePoint, b: LinePoint, t: float) -> LinePoint:
         # itself out of existence.
         susp_max=min(a.susp_max, b.susp_max),
         steer=_lerp(a.steer, b.steer, t),
-        in_puddle=max(a.in_puddle, b.in_puddle),
+        wet_wheels=max(a.wet_wheels, b.wet_wheels),
         surface_rumble=max(a.surface_rumble, b.surface_rumble),
     )
 

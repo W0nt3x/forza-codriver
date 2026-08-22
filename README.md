@@ -76,6 +76,12 @@ settings, stages, recordings and voices (they are yours, not the program's).
 This works when the project was cloned with git; a ZIP download cannot update
 itself, the script tells you what to copy where in that case.
 
+When an update adds words to the co-driver's vocabulary ("water" was one),
+your existing voice pack does not have them yet and they play as beeps. The
+Voice tab marks the pack as missing them; press **Generate** again with the
+same language and name and it is complete. Stages built before such an
+update get the new calls the next time you **Rebuild** or **Learn** them.
+
 ## How it works
 
 The telemetry only ever says where the car is *right now*. It knows nothing
@@ -97,7 +103,9 @@ called once at its start with the tighter number, and corners close together
 get joined into one phrase ("three right into two left"). Jumps aren't
 guessed from the terrain, by the way. They're read straight off the
 suspension: all four wheels fully extended at the same time means you were
-flying.
+flying. Water works the same way: the game reports each wheel that is in
+water, so a ford or a stream across the track on the recon lap becomes a
+"water" call, at the point where the water starts.
 
 Timing is the whole game. A call has to be *finished* about two seconds
 before the corner, not started then, so the trigger distance is your current

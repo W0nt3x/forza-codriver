@@ -229,3 +229,14 @@ def test_a_linked_phrase_ranks_by_its_most_important_part():
     )
     assert s.dropped == 1
     # Head severity alone would have ranked it 6 and lost to the bare 5.
+
+
+def test_a_water_crossing_outranks_a_mild_corner_like_a_jump_does():
+    s = make(
+        [
+            note(200.0, tokens=("water",), severity=None, kind="water"),
+            note(201.0, tokens=("5", "right"), severity=5),
+        ]
+    )
+    events = drive(s, 60.0, 220.0, start_m=50.0)
+    assert [e.note.kind for e, _, _ in events] == ["water"]

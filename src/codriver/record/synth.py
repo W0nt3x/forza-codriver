@@ -68,6 +68,10 @@ class SynthSpec:
     pause_len_s: float = 2.5
     jump_at_s: float | None = 25.0
     jump_len_s: float = 0.5
+    water_at_s: float | None = None
+    water_len_s: float = 0.6
+    """A stretch with all four wheels in water. Off by default, so existing
+    synthetic captures stay byte-identical."""
 
 
 def synth_records(spec: SynthSpec | None = None) -> list[tuple[int, bytes]]:
@@ -136,6 +140,10 @@ def synth_records(spec: SynthSpec | None = None) -> list[tuple[int, bytes]]:
             and spec.jump_at_s <= t < spec.jump_at_s + spec.jump_len_s
         )
         susp = 0.03 if airborne else 0.48
+        wet = (
+            spec.water_at_s is not None
+            and spec.water_at_s <= t < spec.water_at_s + spec.water_len_s
+        )
 
         game_t = t - paused_s
         payload = pack_fields(
@@ -153,6 +161,7 @@ def synth_records(spec: SynthSpec | None = None) -> list[tuple[int, bytes]]:
                 "Roll": 0.0,
                 "NormalizedSuspensionTravel": [susp] * 4,
                 "SuspensionTravelMeters": [susp * 0.2] * 4,
+                "WheelInPuddle": [1 if wet else 0] * 4,
                 "CarOrdinal": 2942,
                 "CarClass": 4,
                 "CarPerformanceIndex": 750,

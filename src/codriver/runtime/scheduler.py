@@ -68,11 +68,11 @@ class _Pending:
 
 
 def _rank_one(kind: str, severity: int | None) -> int:
-    """Lower = more important. Corners by class; hazards sit between 2 and 3 --
-    a jump call matters more than most corners."""
+    """Lower = more important. Corners by class; hazards sit between 2 and 3.
+    A jump or a water crossing matters more than most corners, a crest less."""
     if severity is not None:
         return severity
-    return 2 if kind == "jump" else 3
+    return 2 if kind in ("jump", "water") else 3
 
 
 def _severity_rank(note: Note) -> int:

@@ -36,6 +36,7 @@ CORNER = "corner"
 CREST = "crest"
 DIP = "dip"
 JUMP = "jump"
+WATER = "water"
 
 
 @dataclass(slots=True)
@@ -226,6 +227,54 @@ def detect_jumps(
     return notes
 
 
+def detect_water(
+    line: Sequence[LinePoint],
+    cumulative: Sequence[float],
+    min_wheels: int = 2,
+    min_length_m: float = 5.0,
+    merge_gap_m: float = 15.0,
+) -> list[Note]:
+    """A stretch of road the game flagged as water under the wheels.
+
+    Fords, a stream across the track, the flooded bottom of a dip: the
+    telemetry reports each wheel that is in water, and that is read straight
+    off the recon lap. ``min_wheels`` keeps a roadside puddle under one wheel
+    out of it, ``min_length_m`` keeps a splash out of it, and two wet
+    stretches closer than ``merge_gap_m`` are one crossing, not two calls.
+    The call lands at the start of the water, where the driver wants it.
+    """
+    n = len(line)
+    stretches: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        if line[i].wet_wheels < min_wheels:
+            i += 1
+            continue
+        start = i
+        while i < n and line[i].wet_wheels >= min_wheels:
+            i += 1
+        end = i - 1
+        if stretches and cumulative[start] - cumulative[stretches[-1][1]] <= merge_gap_m:
+            stretches[-1] = (stretches[-1][0], end)
+        else:
+            stretches.append((start, end))
+    notes: list[Note] = []
+    for start, end in stretches:
+        length_m = cumulative[end] - cumulative[start]
+        if length_m < min_length_m:
+            continue
+        notes.append(
+            Note(
+                at_m=cumulative[start],
+                tokens=[WATER],
+                index=start,
+                kind=WATER,
+                length_m=round(length_m, 1),
+            )
+        )
+    return notes
+
+
 def _gradients(
     line: Sequence[LinePoint],
     cumulative: Sequence[float],
@@ -383,6 +432,9 @@ def generate(
     jump_min_duration_s: float = 0.15,
     crest_gradient: float = 0.06,
     dip_gradient: float = -0.06,
+    water_min_wheels: int = 2,
+    water_min_length_m: float = 5.0,
+    water_merge_gap_m: float = 15.0,
 ) -> list[Note]:
     """The note algorithm steps 2-6, plus telemetry hazards, in one call."""
     corners = []
@@ -434,6 +486,9 @@ def generate(
         )
         everything += detect_crests_and_dips(
             line, cumulative, window_points, crest_gradient, dip_gradient
+        )
+        everything += detect_water(
+            line, cumulative, water_min_wheels, water_min_length_m, water_merge_gap_m
         )
     everything.sort(key=lambda n: (n.at_m, n.kind))
 

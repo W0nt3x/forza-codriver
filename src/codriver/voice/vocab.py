@@ -49,6 +49,7 @@ VOCABULARY: dict[str, str] = {
     "dip": "dip",
     "bump": "bump",
     "narrows": "narrows",
+    "water": "water",
     # distances, rally phrasing
     "30": "thirty",
     "50": "fifty",
@@ -102,6 +103,7 @@ VOCABULARY_DE: dict[str, str] = {
     "dip": "Senke",
     "bump": "Buckel",
     "narrows": "wird eng",
+    "water": "Wasser",
     # distances
     "30": "dreißig",
     "50": "fünfzig",

@@ -372,7 +372,14 @@ integrating the resampled line, which is unaffected.
 the official Forza sled spec types the same 16 bytes as `f32`
 (`WheelInPuddleDepth`). Offset and width are identical either way, so nothing
 downstream shifts, only the interpretation. Both readings are decoded, and
-`verify` prints both. Drive through water once and it settles itself.
+`verify` prints both. The water detection in `stage/notes.py` sidesteps the
+question: a wheel counts as wet when its four bytes are anything but zero,
+which is true under either reading. The stage line keeps the number of wet
+wheels per point (`telemetry.wet_wheels` in the stage file, alongside
+`susp_max` and `steer`), so a stage rebuilt from its own line by Learn still
+knows where the water and the jumps were. None of the captures taken so far
+crossed water, so the first ford someone records is also the first real test
+of the threshold defaults.
 
 **Gear 11 appears in real captures.** Probably neutral or a sentinel rather
 than an 11-speed gearbox. Harmless, worth knowing before the runtime reads gear.

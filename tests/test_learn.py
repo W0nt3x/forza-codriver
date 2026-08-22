@@ -214,3 +214,35 @@ def test_run_loop_records_what_it_hears(tmp_path, cfg):
     _, records = read_all(stats.recorded_to)
     assert len(records) == stats.recorded_packets >= 300
     assert runs_for_stage(stage, record_dir) == [stats.recorded_to]
+
+
+def test_learn_keeps_the_jumps_and_water_the_geometry_cannot_see(tmp_path, cfg):
+    """Learn rebuilds the stage from its own saved line. The first stage
+    format dropped the per-point suspension and water telemetry, so the jump
+    a recon lap had recorded vanished the first time Learn ran."""
+    path = tmp_path / "hazards.fzr"
+    write_synth(
+        path,
+        SynthSpec(
+            shape="circle",
+            duration_s=40.0,
+            speed_mps=25.0,
+            size_m=120.0,
+            pause_at_s=None,
+            jump_at_s=15.0,
+            jump_len_s=0.5,
+            water_at_s=25.0,
+            water_len_s=0.6,
+        ),
+    )
+
+    def kinds(stage):
+        return {n.kind for n in stage.notes} | {
+            p["kind"] for n in stage.notes for p in n.parts
+        }
+
+    stage, _ = build_stage(path, cfg)
+    assert {"jump", "water"} <= kinds(stage)
+    save(stage, tmp_path / "h.json")
+    learned, _ = learn_stage(load(tmp_path / "h.json"), cfg, [])
+    assert {"jump", "water"} <= kinds(learned)

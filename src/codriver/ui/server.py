@@ -207,6 +207,28 @@ def config_schema(
 _MISSING = object()
 
 
+def _voice_gaps(voices_dir: Path) -> dict[str, list[str]]:
+    """Per pack, the vocabulary tokens its manifest does not cover.
+
+    A pack generated before a word was added to the vocabulary still works,
+    the missing word plays as a beep, but the UI should say so and point at
+    Generate rather than let someone hear a beep at a river and wonder.
+    """
+    from ..voice.pack import read_manifest
+    from ..voice.vocab import VOCABULARY
+
+    out: dict[str, list[str]] = {}
+    for manifest_path in sorted(voices_dir.glob("*/manifest.yaml")):
+        try:
+            have = {str(t) for t in read_manifest(manifest_path.parent)["tokens"]}
+        except Exception:  # a broken pack is reported elsewhere
+            continue
+        gaps = sorted(set(VOCABULARY) - have)
+        if gaps:
+            out[manifest_path.parent.name] = gaps
+    return out
+
+
 def _dig(node: Any, path: str, missing: bool = False) -> Any:
     for part in path.split("."):
         if not isinstance(node, dict) or part not in node:
@@ -415,6 +437,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             "voices": [
                 p.parent.name for p in sorted(voices_dir.glob("*/manifest.yaml"))
             ],
+            "voice_gaps": _voice_gaps(voices_dir),
         }
 
     @app.get("/api/qr.svg")

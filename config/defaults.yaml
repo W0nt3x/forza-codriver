@@ -153,8 +153,19 @@ stage:
     crest_gradient: 0.06
     # How steep the road has to fall into a hollow to be called a dip.
     dip_gradient: -0.06
-    # Reserved for puddle detection. Not used yet.
-    surface_puddle_min_wheels: 2
+    # Water: the game reports each wheel that is in water, and a stretch of
+    # road where enough wheels are wet is called "water" (a ford, a stream
+    # across the track). This is how many of the four wheels have to be in
+    # water before it counts. 2 keeps a roadside puddle under one wheel out
+    # of it.
+    water_min_wheels: 2
+    # The wet stretch has to be at least this long (metres) to be called, so
+    # a splash is not a call. If you recorded the recon lap in heavy rain and
+    # puddles get called, raise it.
+    water_min_length_m: 5.0
+    # Two wet stretches closer together than this (metres) are one crossing,
+    # called once.
+    water_merge_gap_m: 15.0
 
 # ---------------------------------------------------------------------------
 # Runtime: how the co-driver follows you and times the calls. Takes effect live.

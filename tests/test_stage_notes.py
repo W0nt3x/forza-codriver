@@ -398,3 +398,88 @@ def test_tightens_adds_its_token_to_the_voice_pack_requirements():
     )
     notes = _generate_corners(markings, tightens_min_run_points=12)
     assert "tightens" in required_tokens(notes)
+
+
+# --------------------------------------------------------------------------
+# water, read off the wheel flags, not the map
+# --------------------------------------------------------------------------
+
+
+def _wet_line(wet_counts):
+    line = [
+        LinePoint(x=0.0, y=0.0, z=i * 3.0, susp_max=0.5, wet_wheels=w)
+        for i, w in enumerate(wet_counts)
+    ]
+    return line, [i * 3.0 for i in range(len(line))]
+
+
+def test_a_ford_is_called_water_where_the_water_starts():
+    from codriver.stage.notes import detect_water
+
+    line, cum = _wet_line([0] * 10 + [4] * 5 + [0] * 10)
+    notes = detect_water(line, cum, min_wheels=2, min_length_m=5.0)
+    assert [(n.kind, n.index, n.tokens) for n in notes] == [("water", 10, ["water"])]
+    assert notes[0].length_m == pytest.approx(12.0)
+
+
+def test_one_wet_wheel_is_a_puddle_not_a_water_call():
+    from codriver.stage.notes import detect_water
+
+    line, cum = _wet_line([0] * 10 + [1] * 5 + [0] * 10)
+    assert detect_water(line, cum, min_wheels=2) == []
+
+
+def test_a_splash_is_too_short_to_be_called():
+    from codriver.stage.notes import detect_water
+
+    line, cum = _wet_line([0] * 10 + [4] + [0] * 10)
+    assert detect_water(line, cum, min_length_m=5.0) == []
+
+
+def test_two_wet_stretches_close_together_are_one_crossing():
+    from codriver.stage.notes import detect_water
+
+    near = _wet_line([0] * 5 + [4] * 3 + [0] * 2 + [4] * 3 + [0] * 5)
+    notes = detect_water(*near, min_length_m=5.0, merge_gap_m=15.0)
+    assert [n.index for n in notes] == [5]
+    far = _wet_line([0] * 5 + [4] * 3 + [0] * 20 + [4] * 3 + [0] * 5)
+    assert len(detect_water(*far, min_length_m=5.0, merge_gap_m=15.0)) == 2
+
+
+def test_generate_emits_water_alongside_the_corners():
+    from codriver.stage.notes import generate
+
+    line, cum = _wet_line([0] * 30 + [4] * 6 + [0] * 30)
+    notes = generate(line, [STRAIGHT] * len(line), cum, distance_call_min_m=1e9)
+    assert [n.tokens for n in notes] == [["water"]]
+
+
+def test_per_point_telemetry_survives_the_stage_file(tmp_path):
+    """Learn rebuilds a stage from its saved line. If the file dropped the
+    suspension, water and steering per point, every jump and ford vanished
+    the first time Learn ran, and the orientation check went blind."""
+    from codriver.stage.schema import Stage, load, save
+
+    line = [
+        LinePoint(
+            x=float(i), y=0.0, z=0.0, speed=10.0, steer=0.5,
+            susp_max=0.02 if i == 3 else 0.5, wet_wheels=4 if i == 5 else 0,
+        )
+        for i in range(8)
+    ]
+    save(Stage(name="t", line=line, markings=[STRAIGHT] * 8), tmp_path / "t.json")
+    back = load(tmp_path / "t.json")
+    assert [p.wet_wheels for p in back.line] == [p.wet_wheels for p in line]
+    assert [p.susp_max for p in back.line] == pytest.approx([p.susp_max for p in line], abs=0.01)
+    assert [p.steer for p in back.line] == pytest.approx([0.5] * 8)
+
+
+def test_a_stage_file_without_per_point_telemetry_still_loads():
+    from codriver.stage.schema import Stage, from_dict, to_dict
+
+    data = to_dict(Stage(name="old", line=[LinePoint(x=float(i), y=0.0, z=0.0) for i in range(5)],
+                         markings=[STRAIGHT] * 5))
+    del data["telemetry"]
+    back = from_dict(data)
+    assert len(back.line) == 5
+    assert all(p.susp_max == 1.0 and p.wet_wheels == 0 for p in back.line)

@@ -193,7 +193,7 @@ def learn_stage(
             speed=median(all_speeds[i]) if all_speeds[i] else p.speed,
             susp_max=p.susp_max,
             steer=p.steer,
-            in_puddle=p.in_puddle,
+            wet_wheels=p.wet_wheels,
             surface_rumble=p.surface_rumble,
         )
         for i, p in enumerate(line)

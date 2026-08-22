@@ -245,3 +245,23 @@ def test_gpx_refuses_an_empty_stage():
 
     with pytest.raises(ValueError, match="no line"):
         to_gpx(Stage(name="empty"))
+
+
+def test_water_in_the_telemetry_becomes_a_water_note(tmp_path, cfg):
+    path = tmp_path / "ford.fzr"
+    write_synth(
+        path,
+        SynthSpec(
+            shape="circle",
+            duration_s=40.0,
+            speed_mps=25.0,
+            size_m=120.0,
+            pause_at_s=None,
+            jump_at_s=None,
+            water_at_s=20.0,
+            water_len_s=0.6,
+        ),
+    )
+    stage, _ = build_stage(path, cfg)
+    water = [n for n in stage.notes if "water" in n.tokens]
+    assert len(water) == 1, [n.text for n in stage.notes]

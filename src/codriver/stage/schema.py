@@ -100,6 +100,15 @@ def to_dict(stage: Stage) -> dict[str, Any]:
         # is bulk data.
         "line": [[round(p.x, 2), round(p.y, 2), round(p.z, 2)] for p in stage.line],
         "recon_speed_kmh": [round(p.speed * 3.6) for p in stage.line],
+        # Per-point telemetry that the hazard detection and the orientation
+        # check need again when a stage is rebuilt from its own line, which
+        # is what Learn does. Without it, jumps and water vanished the first
+        # time Learn ran.
+        "telemetry": {
+            "steer": [round(p.steer, 2) for p in stage.line],
+            "susp_max": [round(p.susp_max, 2) for p in stage.line],
+            "wet_wheels": [p.wet_wheels for p in stage.line],
+        },
         "markings": [m.label for m in stage.markings],
     }
 
@@ -114,12 +123,24 @@ def from_dict(data: dict[str, Any]) -> Stage:
         )
 
     speeds = data.get("recon_speed_kmh") or []
+    telemetry = data.get("telemetry") or {}
+    steer = telemetry.get("steer") or []
+    susp_max = telemetry.get("susp_max") or []
+    wet_wheels = telemetry.get("wet_wheels") or []
+
+    def at(values: list, i: int, default: float) -> float:
+        # Older stage files carry none of these; they load as they always did.
+        return values[i] if i < len(values) else default
+
     line = [
         LinePoint(
             x=xyz[0],
             y=xyz[1],
             z=xyz[2],
-            speed=(speeds[i] / 3.6) if i < len(speeds) else 0.0,
+            speed=at(speeds, i, 0.0) / 3.6,
+            steer=float(at(steer, i, 0.0)),
+            susp_max=float(at(susp_max, i, 1.0)),
+            wet_wheels=int(at(wet_wheels, i, 0)),
         )
         for i, xyz in enumerate(data.get("line", []))
     ]

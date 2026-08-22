@@ -57,14 +57,21 @@ async function refreshState() {
   document.querySelectorAll("#stage-list li[data-name]").forEach((li) =>
     li.addEventListener("click", () => showStage(li.dataset.name)));
 
-  const voices = STATE.voices.map((v) => `<li><b>${v}</b>${v === STATE.voice_pack ? ' <span class="tag">active</span>' : ""}</li>`).join("");
+  const gaps = STATE.voice_gaps || {};
+  const gapBadge = (v) => gaps[v]
+    ? ` <span class="badge" title="words added since this pack was generated; they play as beeps until you generate the pack again">missing: ${gaps[v].join(", ")}</span>`
+    : "";
+  const voices = STATE.voices.map((v) => `<li><b>${v}</b>${v === STATE.voice_pack ? ' <span class="tag">active</span>' : ""}${gapBadge(v)}</li>`).join("");
   $("#voice-list").innerHTML = voices || "<li class='muted'>no voice pack yet, generate one</li>";
   $("#say-pack").innerHTML = STATE.voices.map((v) => `<option ${v === STATE.voice_pack ? "selected" : ""}>${v}</option>`).join("");
 
   // Voice state, shown where people actually look: Setup and Drive.
   const voiceOk = STATE.voices.includes(STATE.voice_pack);
+  const activeGaps = voiceOk ? gaps[STATE.voice_pack] : null;
   $("#voice-setup-text").innerHTML = voiceOk
-    ? `Active voice: <b>${STATE.voice_pack}</b>. Done. More voices and a test button are on the Voice tab.`
+    ? (activeGaps
+        ? `Active voice: <b>${STATE.voice_pack}</b>, but it is missing words added since it was generated (<b>${activeGaps.join(", ")}</b>), which play as beeps. Generate it again on the Voice tab, same language, same name, about 20 seconds.`
+        : `Active voice: <b>${STATE.voice_pack}</b>. Done. More voices and a test button are on the Voice tab.`)
     : (STATE.voices.length
         ? `You have a voice pack (${STATE.voices.join(", ")}) but <b>${STATE.voice_pack}</b> is selected and does not exist. Pick one under Config, Voice.`
         : `<b>No voice yet.</b> Right now the co-driver would only beep. Generate one:`);
@@ -270,7 +277,7 @@ function drawMap(st) {
   ctx.font = `${11 * devicePixelRatio}px system-ui, sans-serif`;
   st.notes.forEach((n) => {
     const p = st.line[Math.min(n.index, st.line.length - 1)];
-    ctx.fillStyle = n.kind === "corner" ? "#ffffff" : "#ffd60a";
+    ctx.fillStyle = n.kind === "corner" ? "#ffffff" : n.kind === "water" ? "#2fb3ff" : "#ffd60a";
     ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.5 * devicePixelRatio, 0, 7); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,.85)";
     ctx.fillText(n.text, X(p[0]) + 6 * devicePixelRatio, Y(p[1]) - 4 * devicePixelRatio);

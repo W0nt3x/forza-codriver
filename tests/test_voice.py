@@ -205,10 +205,10 @@ def test_stage_coverage_answers_the_question_that_matters(tmp_path):
 def test_vocabulary_covers_everything_the_generator_can_emit():
     """Every token stage/notes.py can produce must have a spoken form, or a
     generated pack would ship with holes."""
-    from codriver.stage.notes import CREST, DIP, JUMP
+    from codriver.stage.notes import CREST, DIP, JUMP, WATER
 
     emitted = {str(n) for n in range(1, 7)}
-    emitted |= {"left", "right", "tightens", "into", "and", JUMP, CREST, DIP}
+    emitted |= {"left", "right", "tightens", "long", "into", "and", JUMP, CREST, DIP, WATER}
     emitted |= {"30", "50", "70", "100", "150", "200", "250", "300", "400", "500"}
     assert emitted <= set(VOCABULARY)
 

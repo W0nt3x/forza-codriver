@@ -196,6 +196,9 @@ def stage_from_line(
         jump_min_duration_s=cfg.get("stage.hazards.jump_min_duration_s"),
         crest_gradient=cfg.get("stage.hazards.crest_gradient"),
         dip_gradient=cfg.get("stage.hazards.dip_gradient"),
+        water_min_wheels=cfg.get("stage.hazards.water_min_wheels"),
+        water_min_length_m=cfg.get("stage.hazards.water_min_length_m"),
+        water_merge_gap_m=cfg.get("stage.hazards.water_merge_gap_m"),
     )
     report.notes = len(generated)
 

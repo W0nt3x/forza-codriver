@@ -39,7 +39,11 @@ class LinePoint:
     """Highest of the four NormalizedSuspensionTravel values. Near 0 means
     every wheel is extended, which means airborne."""
     steer: float = 0.0
-    in_puddle: float = 0.0
+    wet_wheels: int = 0
+    """How many of the four wheels the game reports as in water (0..4). Any
+    nonzero reading on a wheel counts, whichever way the game encodes the
+    field, so a ford shows up here whether the packet says "flag" or
+    "depth"."""
     surface_rumble: float = 0.0
 
     @property
@@ -72,7 +76,7 @@ def frame_to_point(f: TelemetryFrame) -> LinePoint:
         speed=f.speed,
         susp_max=max(f.susp),
         steer=f.steer,
-        in_puddle=max(f.in_puddle),
+        wet_wheels=sum(1 for v in f.in_puddle if v != 0.0),
         surface_rumble=max(f.surface_rumble),
     )
 
