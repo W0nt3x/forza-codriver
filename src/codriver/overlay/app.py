@@ -60,13 +60,29 @@ class Overlay:
     # -- geometry in shares of the screen -----------------------------------------
 
     def _pixels_from_config(self) -> tuple[int, int, int, int]:
+        self._migrate_legacy_placement()
         size = min(1.0, max(0.05, float(self.cfg.get("overlay.size"))))
         aspect = min(4.0, max(0.4, float(self.cfg.get("overlay.aspect"))))
         h = max(40, int(size * self.screen_h))
         w = max(40, int(h * aspect))
-        x = int(float(self.cfg.get("overlay.x")) * self.screen_w)
-        y = int(float(self.cfg.get("overlay.y")) * self.screen_h)
-        return x, y, w, h
+        # On the screen, whatever the file says: a window placed off-screen is
+        # "the overlay does nothing" to the person in front of it.
+        xf = min(max(0.0, float(self.cfg.get("overlay.x"))), max(0.0, 1.0 - w / self.screen_w))
+        yf = min(max(0.0, float(self.cfg.get("overlay.y"))), max(0.0, 1.0 - h / self.screen_h))
+        return int(xf * self.screen_w), int(yf * self.screen_h), w, h
+
+    def _migrate_legacy_placement(self) -> None:
+        """The first version stored x, y, width, height in pixels. Read as
+        shares those put the window a thousand screens to the right. Convert
+        once and drop the keys nothing reads any more."""
+        x, y = float(self.cfg.get("overlay.x")), float(self.cfg.get("overlay.y"))
+        if x > 2.0 or y > 2.0:
+            self.cfg.set_local("overlay.x", round(min(x / self.screen_w, 0.9), 4))
+            self.cfg.set_local("overlay.y", round(min(y / self.screen_h, 0.9), 4))
+            log.info("overlay: converted the old pixel placement to screen shares")
+        for key in ("overlay.width", "overlay.height", "overlay.font_px"):
+            if self.cfg.get(key, None) is not None:
+                self.cfg.unset_local(key)
 
     def _on_geometry(self, x: int, y: int, w: int, h: int, final: bool) -> None:
         """During a drag or resize: re-render at the new size. When it ends:

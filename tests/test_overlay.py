@@ -218,3 +218,47 @@ def test_the_window_is_layered_topmost_clickthrough_and_does_not_take_focus():
     finally:
         w.destroy()
     assert not win32.user32.IsWindow(w.hwnd or 0)
+
+
+def test_legacy_pixel_placement_is_converted_and_kept_on_screen(cfg_dir):
+    """Stage 1 stored pixels; read as shares they put the window a thousand
+    screens to the right. Convert once, drop the dead keys, clamp on screen."""
+    from codriver.overlay.app import Overlay
+
+    (cfg_dir / "local.yaml").write_text(
+        "overlay:\n  x: 1856\n  y: 64\n  width: 45\n  height: 47\n", encoding="utf-8")
+    cfg = Config.load(cfg_dir)
+    ov = Overlay(cfg, window_factory=FakeWindow)
+    assert 0 <= ov.window.x <= 1920 - ov.window.width
+    assert 0 <= ov.window.y <= 1080 - ov.window.height
+    saved = yaml.safe_load((cfg_dir / "local.yaml").read_text(encoding="utf-8"))
+    assert "width" not in saved["overlay"] and "height" not in saved["overlay"]
+    assert saved["overlay"]["x"] <= 0.9 and saved["overlay"]["y"] == round(64 / 1080, 4)
+
+
+@pytest.mark.skipif(not _has_windows_desktop(), reason="needs a Windows desktop")
+def test_a_second_window_gets_its_own_messages_after_the_first_is_gone():
+    """The class is registered once per process. Its window procedure must
+    route by hwnd, not to whichever instance registered it: that instance may
+    be stopped and collected while a later overlay is alive (seen live: the
+    hotkey crashed the thread with an access violation)."""
+    import gc
+
+    from codriver.overlay import win32
+    from codriver.overlay.win32 import LayeredWindow
+
+    first = LayeredWindow(50, 50, 100, 80)
+    first.create()
+    first.destroy()
+    del first
+    gc.collect()
+
+    hits = []
+    second = LayeredWindow(60, 60, 120, 90, hotkey=parse_hotkey("ctrl+shift+f11"), on_hotkey=lambda: hits.append(1))
+    second.create()
+    try:
+        win32.user32.SendMessageW(second.hwnd, win32.WM_HOTKEY, win32.HOTKEY_ID, 0)
+        assert hits == [1], "the second window's hotkey reaches the second window's handler"
+    finally:
+        second.destroy()
+

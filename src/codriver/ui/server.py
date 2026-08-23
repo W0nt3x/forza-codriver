@@ -276,24 +276,9 @@ def _set_local(local_path: Path, key: str, value: Any) -> dict:
 
 
 def _unset_local(local_path: Path, key: str) -> None:
-    if not local_path.is_file():
-        return
-    data = yaml.safe_load(local_path.read_text(encoding="utf-8")) or {}
-    parts = key.split(".")
-    node = data
-    trail = []
-    for part in parts[:-1]:
-        if not isinstance(node, dict) or part not in node:
-            return
-        trail.append((node, part))
-        node = node[part]
-    if isinstance(node, dict):
-        node.pop(parts[-1], None)
-    # prune empty sections
-    for parent, part in reversed(trail):
-        if parent[part] == {}:
-            del parent[part]
-    local_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    from ..config import remove_local_value
+
+    remove_local_value(local_path, key)
 
 
 def _coerce(value: Any, kind: str) -> Any:

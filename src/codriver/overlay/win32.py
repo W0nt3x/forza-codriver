@@ -172,6 +172,45 @@ def _bind() -> None:
 
 if user32 is not None:
     _bind()
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = LRESULT
+
+
+# The window class is registered once per process and its window procedure
+# is this module-level trampoline, alive for the life of the process. It
+# finds the LayeredWindow behind an hwnd in _INSTANCES. The first version
+# registered the class with the first instance's bound method: a second
+# overlay (stop, start again) then had its messages delivered to the first,
+# already collected, instance, and the hotkey crashed the thread.
+_INSTANCES: dict[int, "LayeredWindow"] = {}
+_CLASS_READY = False
+
+
+def _trampoline(hwnd, msg, wparam, lparam):
+    inst = _INSTANCES.get(int(hwnd) if hwnd else 0)
+    if inst is None:
+        # creation-time messages arrive before the hwnd is known: defaults
+        return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+    return inst._handle(hwnd, msg, wparam, lparam)
+
+
+_TRAMPOLINE = WNDPROC(_trampoline) if user32 is not None else None
+
+
+def _ensure_class() -> None:
+    global _CLASS_READY
+    if _CLASS_READY:
+        return
+    wc = WNDCLASSEXW()
+    wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
+    wc.lpfnWndProc = _TRAMPOLINE
+    wc.hInstance = kernel32.GetModuleHandleW(None)
+    wc.lpszClassName = CLASS_NAME
+    wc.hCursor = user32.LoadCursorW(None, ctypes.c_wchar_p(32512))  # IDC_ARROW
+    atom = user32.RegisterClassExW(ctypes.byref(wc))
+    if not atom and ctypes.get_last_error() != 1410:  # ERROR_CLASS_ALREADY_EXISTS
+        raise ctypes.WinError(ctypes.get_last_error())
+    _CLASS_READY = True
 
 
 def get_exstyle(hwnd: int) -> int:
@@ -227,28 +266,19 @@ class LayeredWindow:
         self.hwnd: int | None = None
         self.edit_mode = False
         self._alive = False
-        self._wndproc = WNDPROC(self._handle)  # keep the callback alive
-        self._class_atom: int | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
     def create(self) -> None:
+        _ensure_class()
         hinst = kernel32.GetModuleHandleW(None)
-        wc = WNDCLASSEXW()
-        wc.cbSize = ctypes.sizeof(WNDCLASSEXW)
-        wc.lpfnWndProc = self._wndproc
-        wc.hInstance = hinst
-        wc.lpszClassName = CLASS_NAME
-        wc.hCursor = user32.LoadCursorW(None, ctypes.c_wchar_p(32512))  # IDC_ARROW
-        atom = user32.RegisterClassExW(ctypes.byref(wc))
-        if not atom and ctypes.get_last_error() != 1410:  # ERROR_CLASS_ALREADY_EXISTS
-            raise ctypes.WinError(ctypes.get_last_error())
         exstyle = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
         hwnd = user32.CreateWindowExW(exstyle, CLASS_NAME, "codriver overlay", WS_POPUP,
                                       self.x, self.y, self.width, self.height, None, None, hinst, None)
         if not hwnd:
             raise ctypes.WinError(ctypes.get_last_error())
-        self.hwnd = hwnd
+        self.hwnd = int(hwnd)
+        _INSTANCES[self.hwnd] = self
         self._alive = True
         if self.hotkey is not None:
             mods, vk = self.hotkey
@@ -263,6 +293,8 @@ class LayeredWindow:
         if self.hwnd and user32.IsWindow(self.hwnd):
             user32.UnregisterHotKey(self.hwnd, HOTKEY_ID)
             user32.DestroyWindow(self.hwnd)
+        if self.hwnd:
+            _INSTANCES.pop(self.hwnd, None)
         self.hwnd = None
         self._alive = False
 
