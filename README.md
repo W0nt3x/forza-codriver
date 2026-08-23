@@ -58,7 +58,8 @@ your phone show the HUD later.
 
 - *Game settings.* In Forza: **Settings → HUD and Gameplay → Data Out: On,
   IP 127.0.0.1, Port 5400.** Not 5300. Yes, every guide on the internet says
-  5300, and Forza's own docs now warn that the game uses 5200 to 5300 for itself.
+  5300, and [Forza's own Data Out documentation](https://support.forza.net/hc/en-us/articles/51744149102611-Forza-Horizon-6-Data-Out-Documentation) says to avoid 5200 to
+  5300 because the game uses that range itself.
   Press **Check** while driving and the page tells you whether the game is
   talking to it.
 - *Record a recon lap.* Give it a name, press **Start recording**, drive the
@@ -190,11 +191,9 @@ tab shows a QR code instead: scan it with a phone on the same WLAN, prop the
 phone next to your wheel, done. It shows the next call in large type, the
 distance to it, and a log of what was said. Audio still comes from the PC.
 
-The HUD itself never leaves your WLAN and needs no account. The UI answers
-only when opened as `localhost` or an IP address, and it refuses changes
-that do not come from its own page, so a random website you have open in
-another tab cannot poke it. If you'd rather the UI weren't reachable from
-other devices at all, start with `start.bat --local-only`.
+The HUD itself never leaves your WLAN and needs no account. If you'd rather
+the UI weren't reachable from other devices at all, start with
+`start.bat --local-only`.
 
 ## Tuning
 
