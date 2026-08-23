@@ -80,6 +80,11 @@ class TelemetryFrame:
     # -- session -----------------------------------------------------------
     distance_traveled: float = 0.0
     lap: int = 0
+    race_position: int = 0
+    """The game's race position, 1 and up. Only ever nonzero inside an
+    event: free roam and menus report 0. What tells a race from a drive."""
+    driving_line: int = 0
+    """The racing-line assist's offset, -127..127. Zero outside events."""
 
     raw: Mapping[str, Any] | None = field(default=None, repr=False)
     """Every field the adapter decoded, under its native name. Debugging only --

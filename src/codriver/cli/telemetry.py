@@ -63,8 +63,36 @@ def cmd_listen(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_capture_auto(args: argparse.Namespace, cfg: Config) -> int:
+    from ..record.session import session_record
+
+    directory = Path(args.dir) if args.dir else cfg.path("capture.dir")
+
+    def show(event: dict) -> None:
+        kind = event["kind"]
+        if kind == "session_started":
+            err(f"auto-record on port {event['port']}: waiting for a race, free roam is ignored. Ctrl+C to stop.")
+        elif kind == "race_started":
+            err(f"\nrace #{event['race']}: recording {event['path']}")
+        elif kind == "race_saved":
+            err(f"\nsaved {event['path']} ({event['seconds']} s), {event['races']} so far")
+        elif kind == "race_discarded":
+            err(f"\na {event['seconds']} s blip was not a race, dropped")
+        elif kind == "status":
+            line = (f"\r  recording  {event['packets']:7d} pkts  {event.get('speed_kmh', 0.0):6.1f} km/h   "
+                    if event.get("racing") else f"\r  waiting for a race ({event['races']} saved)          ")
+            print(line, end="", file=sys.stderr, flush=True)
+
+    result = session_record(cfg, directory, on_event=show)
+    err(f"\n{len(result.races)} race(s) saved, {result.discarded} dropped")
+    return 0
+
+
 def cmd_capture(args: argparse.Namespace, cfg: Config) -> int:
     from ..record.recon import capture_stream
+
+    if getattr(args, "auto", False):
+        return _cmd_capture_auto(args, cfg)
 
     directory = Path(args.dir) if args.dir else cfg.path("capture.dir")
     path = Path(args.output) if args.output else cap.default_capture_path(
@@ -202,6 +230,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     p.set_defaults(func=cmd_listen)
 
     p = sub.add_parser("capture", help="record raw datagrams to a .fzr file")
+    p.add_argument("--auto", action="store_true",
+                   help="record every race you enter as its own file until Ctrl+C; free roam and menus are skipped")
     p.add_argument("-o", "--output", help="explicit output path")
     p.add_argument("--dir", help="output directory (default: capture.dir)")
     p.add_argument("--name", help="basename; default is a timestamp")

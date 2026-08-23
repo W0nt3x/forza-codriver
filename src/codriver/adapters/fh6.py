@@ -211,6 +211,8 @@ I_SPEED = _IX["Speed"]
 I_DISTANCE = _IX["DistanceTraveled"]
 I_RACE_TIME = _IX["CurrentRaceTime"]
 I_LAP = _IX["LapNumber"]
+I_RACE_POSITION = _IX["RacePosition"]
+I_DRIVING_LINE = _IX["NormalizedDrivingLine"]
 I_ACCEL = _IX["Accel"]
 I_BRAKE = _IX["Brake"]
 I_CLUTCH = _IX["Clutch"]
@@ -282,6 +284,8 @@ class FH6Adapter:
             steer=max(-1.0, min(1.0, v[I_STEER] / 127.0)),
             distance_traveled=v[I_DISTANCE],
             lap=v[I_LAP],
+            race_position=int(v[I_RACE_POSITION]),
+            driving_line=int(v[I_DRIVING_LINE]),
             raw=self.describe(data) if self.keep_raw else None,
         )
 

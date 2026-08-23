@@ -788,6 +788,16 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
         return _start("capture", job, f"recording {path.name}")
 
+    @app.post("/api/session")
+    async def session(body: dict | None = None) -> dict:
+        """Auto-record: one job for the evening, a recording per race."""
+        from ..record.session import session_record
+
+        def job(emit, should_stop):
+            return session_record(cfg, recordings_dir, on_event=emit, should_stop=should_stop)
+
+        return _start("session", job, "auto-recording races")
+
     @app.post("/api/run")
     async def run(body: dict) -> dict:
         from ..runtime.run import run_stage

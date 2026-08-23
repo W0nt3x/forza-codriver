@@ -54,7 +54,9 @@ HUD.
   reserves 5200 to 5300 for the game itself. Press **Check** while driving
   and the page tells you whether the game is talking to it.
 - *Record a recon lap.* Give it a name, press **Start recording**, drive the
-  race once at any speed on a clean line, press **Stop**.
+  race once at any speed on a clean line, press **Stop**. Or press
+  **Auto-record every race** once for the evening: every race you enter is
+  saved on its own, free roam is skipped.
 - *Build.* Press **Build**. The **Stages** tab shows the notes and a map
   coloured by how tight each corner is.
 - *Drive.* On the **Drive** tab pick the stage, press **Start co-driver**,

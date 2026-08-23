@@ -37,6 +37,23 @@ capture:
   # Also record packets from menus and pauses. Keeps everything; filtering
   # happens later.
   include_race_off: true
+  # Auto-record ("Auto-record every race" on the Setup tab, or capture --auto):
+  # one listener for the whole evening, a new recording per race. A race is
+  # recognised by the game's own race position, which is 1 and up only inside
+  # events; free roam and menus report 0.
+  auto:
+    # This many racing packets in a row before a race counts, about half a
+    # second. Keeps a single stray packet from opening a file.
+    start_frames: 15
+    # This long without racing packets ends the race (finish, quit, menu).
+    end_s: 3.0
+    # No packets at all for this long ends it too (loading screens).
+    gap_s: 5.0
+    # Seconds before the race start to keep, so the recording has the
+    # countdown and the first metre.
+    preroll_s: 2.0
+    # Recordings shorter than this are restarts and blips, not races; dropped.
+    min_seconds: 20
 
 replay:
   # Where a replay sends the packets. Usually this PC.

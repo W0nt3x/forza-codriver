@@ -163,6 +163,8 @@ function setJobPill(job) {
   pill.textContent = job.busy ? job.label || job.kind : "idle";
   $("#btn-capture").disabled = job.busy;
   $("#btn-capture-stop").disabled = !(job.busy && job.kind === "capture");
+  $("#btn-session").disabled = job.busy;
+  $("#btn-session-stop").disabled = !(job.busy && job.kind === "session");
   $("#btn-run").disabled = job.busy;
   $("#btn-run-stop").disabled = !(job.busy && job.kind === "run");
   $("#btn-scan").disabled = job.busy;
@@ -186,6 +188,7 @@ function handleEvent(e) {
   }
   if (job === "scan") onScan(e);
   if (job === "capture") onCapture(e);
+  if (job === "session") onSession(e);
   if (job === "run") onRun(e);
   if (job === "voice") onVoice(e);
 }
@@ -218,6 +221,19 @@ $("#btn-capture").onclick = () => {
   api("/api/capture", "POST", { name: $("#capture-name").value }).catch((x) => alert(x.message));
 };
 $("#btn-capture-stop").onclick = () => api("/api/stop", "POST");
+$("#btn-session").onclick = () => { $("#capture-status").textContent = ""; api("/api/session", "POST", {}).catch((x) => alert(x.message)); };
+$("#btn-session-stop").onclick = () => api("/api/stop", "POST");
+function onSession(e) {
+  const s = $("#capture-status");
+  if (e.kind === "session_started") s.textContent = `auto-record on port ${e.port}: waiting for a race (free roam is ignored)…`;
+  if (e.kind === "race_started") s.textContent = `recording race #${e.race}…`;
+  if (e.kind === "status") s.textContent = e.racing
+    ? `recording race · ${e.packets} packets · ${(e.speed_kmh || 0).toFixed(0)} km/h`
+    : `waiting for a race · ${e.races} saved so far${e.idle ? " · stream idle" : ""}`;
+  if (e.kind === "race_saved") { s.textContent = `saved ${e.path} (${e.seconds} s). ${e.races} race(s) this session. Build it below.`; refreshState(); }
+  if (e.kind === "race_discarded") s.textContent = `a ${e.seconds} s blip was not a race, dropped`;
+  if (e.kind === "done") { s.textContent = `auto-record stopped: ${e.races.length} race(s) saved${e.discarded ? `, ${e.discarded} blip(s) dropped` : ""}`; refreshState(); }
+}
 function onCapture(e) {
   const s = $("#capture-status");
   if (e.kind === "waiting") s.textContent = `waiting for telemetry on port ${e.port}… drive!`;
