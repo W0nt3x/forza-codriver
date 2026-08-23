@@ -133,9 +133,9 @@ def test_dragging_in_edit_mode_persists_the_placement(cfg_dir):
     ov = Overlay(cfg, window_factory=FakeWindow)
     ov.toggle_edit_mode()   # no data yet: edit mode shows the sample picture
     ov.render()
-    # 30 % of a 1080 screen, aspect 1.2: 324 x 388, placed at 4 % / 8 %
-    assert ov.window.frames[0].size == (388, 324)
-    assert (ov.window.x, ov.window.y) == (int(0.04 * 1920), int(0.08 * 1080))
+    # 26 % of a 1080 screen, aspect 1.25: 280 x 350, placed at 76 % / 14 %
+    assert ov.window.frames[0].size == (350, 280)
+    assert (ov.window.x, ov.window.y) == (int(0.76 * 1920), int(0.14 * 1080))
 
     assert ov.window.edit_mode is True
     ov.window.on_geometry(500, 120, 420, 330, False)   # mid-drag: re-render only
@@ -231,9 +231,10 @@ def test_legacy_pixel_placement_is_converted_and_kept_on_screen(cfg_dir):
     ov = Overlay(cfg, window_factory=FakeWindow)
     assert 0 <= ov.window.x <= 1920 - ov.window.width
     assert 0 <= ov.window.y <= 1080 - ov.window.height
-    saved = yaml.safe_load((cfg_dir / "local.yaml").read_text(encoding="utf-8"))
-    assert "width" not in saved["overlay"] and "height" not in saved["overlay"]
-    assert saved["overlay"]["x"] <= 0.9 and saved["overlay"]["y"] == round(64 / 1080, 4)
+    assert (ov.window.x, ov.window.y) == (int(cfg.get("overlay.x") * 1920), int(cfg.get("overlay.y") * 1080))
+    saved = yaml.safe_load((cfg_dir / "local.yaml").read_text(encoding="utf-8")) or {}
+    assert "overlay" not in saved, "the old placement is dropped entirely, defaults apply"
+    assert cfg.get("overlay.x") == 0.76, "the shipped default: top right"
 
 
 @pytest.mark.skipif(not _has_windows_desktop(), reason="needs a Windows desktop")

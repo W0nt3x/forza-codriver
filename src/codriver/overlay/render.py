@@ -80,6 +80,23 @@ def _is_hazard(note: NoteBrief | None) -> bool:
     return note is not None and note.kind != "corner" and note.direction is None
 
 
+def fit_font(text: str, max_px: int, max_width: float, min_px: int = 8):
+    """The largest font up to ``max_px`` at which ``text`` is narrower than
+    ``max_width``. A long phrase shrinks instead of running off the box."""
+    px = max(min_px, int(max_px))
+    font = load_font(px)
+    while px > min_px:
+        try:
+            width = font.getlength(text)
+        except AttributeError:  # bitmap fallback font
+            width = len(text) * px * 0.6
+        if width <= max_width:
+            break
+        px = max(min_px, int(px * 0.92))
+        font = load_font(px)
+    return font
+
+
 # -- frames -----------------------------------------------------------------------
 
 def render_frame(view: View, width: int, height: int, style: Style,
@@ -103,26 +120,31 @@ def render_frame(view: View, width: int, height: int, style: Style,
 
     nxt = view.next
     # 1. the arrow (or the hazard word) in the upper two thirds
+    usable = w * 0.94  # text never touches the edges of the box
     if _is_hazard(nxt):
-        _text(draw, (w * 0.5, h * 0.40), shorthand(nxt.tokens[:1]), load_font(int(h * 0.20)),
+        word = shorthand(nxt.tokens[:1])
+        _text(draw, (w * 0.5, h * 0.40), word, fit_font(word, int(h * 0.20), usable),
               style.arrow_rgb, style.outline_rgb, ss)
     else:
         direction = nxt.direction or _first_direction(nxt.tokens) or "right"
         _arrow(draw, w, h, ss, style, direction)
 
-    # 2. the call in shorthand, big
-    _text(draw, (w * 0.5, h * 0.79), shorthand(nxt.tokens), load_font(int(h * 0.15)),
+    # 2. the call in shorthand, big, shrunk to fit if it is a long one
+    call = shorthand(nxt.tokens)
+    _text(draw, (w * 0.5, h * 0.79), call, fit_font(call, int(h * 0.15), usable),
           style.text_rgb, style.outline_rgb, ss)
 
     # 3. the call after next, small, as a preview
     if view.after is not None:
-        _text(draw, (w * 0.5, h * 0.93), "then " + shorthand(view.after.tokens), load_font(int(h * 0.075)),
+        then = "then " + shorthand(view.after.tokens)
+        _text(draw, (w * 0.5, h * 0.93), then, fit_font(then, int(h * 0.075), usable),
               style.muted_rgb, style.outline_rgb, ss)
 
     # 4. the distance, top right, secondary
     if view.distance_m is not None:
-        _text(draw, (w * 0.86, h * 0.10), f"{int(round(view.distance_m / 5.0) * 5)} m",
-              load_font(int(h * 0.10)), style.muted_rgb, style.outline_rgb, ss)
+        dist = f"{int(round(view.distance_m / 5.0) * 5)} m"
+        _text(draw, (w * 0.96, h * 0.10), dist, fit_font(dist, int(h * 0.10), w * 0.4),
+              style.muted_rgb, style.outline_rgb, ss, anchor="rm")
 
     live = view.mode == "tracking"
     return _finish(img, width, height, ss, dim=(not live) and not edit_mode)
@@ -184,25 +206,27 @@ def _hint(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, style: Style, view
         msg = "off the stage"
     else:
         msg = "no more calls"
-    _text(draw, (w * 0.5, h * 0.5), msg, load_font(int(h * 0.07)), style.muted_rgb, style.outline_rgb, ss)
+    _text(draw, (w * 0.5, h * 0.5), msg, fit_font(msg, int(h * 0.07), w * 0.94), style.muted_rgb, style.outline_rgb, ss)
 
 
 def _draw_edit_chrome(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, caption: str) -> None:
     draw.rectangle([0, 0, w - 1, h - 1], fill=(20, 24, 32, 110), outline=(255, 255, 255, 230), width=2 * ss)
     grip = max(16 * ss, int(h * 0.08))
     draw.polygon([(w - 1, h - 1), (w - 1 - grip, h - 1), (w - 1, h - 1 - grip)], fill=(255, 255, 255, 230))
-    font = load_font(max(10 * ss, int(h * 0.045)))
     text = caption or "edit: drag to move, corner resizes, hotkey locks"
+    font = fit_font(text, max(10 * ss, int(h * 0.045)), w - 20 * ss)
     draw.text((10 * ss, 8 * ss), text, font=font, fill=(255, 255, 255, 255))
 
 
 def _text(draw: ImageDraw.ImageDraw, center: tuple[float, float], text: str, font,
-          fill: tuple[int, int, int], outline: tuple[int, int, int], ss: int) -> None:
-    """Centred text with a dark halo, readable over any game frame."""
+          fill: tuple[int, int, int], outline: tuple[int, int, int], ss: int,
+          anchor: str = "mm") -> None:
+    """Text with a dark halo, readable over any game frame. Centred by
+    default; "rm" right-aligns on the point."""
     x, y = center
     stroke = max(2, 3 * ss)
     try:
-        draw.text((x, y), text, font=font, fill=fill + (255,), anchor="mm",
+        draw.text((x, y), text, font=font, fill=fill + (255,), anchor=anchor,
                   stroke_width=stroke, stroke_fill=outline + (255,))
     except (ValueError, TypeError):  # bitmap fonts know no anchors
         draw.text((x, y), text, font=font, fill=fill + (255,))

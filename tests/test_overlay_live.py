@@ -163,3 +163,20 @@ def test_status_event_carries_the_upcoming_notes():
     n = Note(at_m=100.0, tokens=["3", "right", "into", "2", "left"], severity=3, direction="right")
     assert note_brief(n) == {"text": "3 right into 2 left", "tokens": ["3", "right", "into", "2", "left"],
                              "severity": 3, "direction": "right", "kind": "corner", "at_m": 100.0}
+
+
+def test_long_calls_shrink_to_fit_the_box():
+    """"L tightens 2 into 3 R long" in a narrow box must shrink, not run off
+    the edges: no opaque pixel may touch the left or right border."""
+    style = Style()
+    long_note = NoteBrief("left tightens 2 into 3 right long",
+                          ("100", "left", "tightens", "2", "into", "3", "right", "long"), 2, "left", "corner", 120.0)
+    after = NoteBrief("4 right long", ("4", "right", "long"), 4, "right", "corner", 300.0)
+    for width, height in ((300, 300), (200, 260), (420, 200)):
+        img = render_frame(View("tracking", long_note, after, 120.0, 90.0, True), width, height, style)
+        left_edge = max(img.getpixel((0, y))[3] for y in range(height))
+        right_edge = max(img.getpixel((width - 1, y))[3] for y in range(height))
+        assert left_edge == 0 and right_edge == 0, f"text ran off the box at {width}x{height}"
+        # and it is still there, readable: opaque pixels in the call line
+        assert max(img.getpixel((x, int(height * 0.79)))[3] for x in range(width)) == 255
+

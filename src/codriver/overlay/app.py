@@ -77,9 +77,12 @@ class Overlay:
         once and drop the keys nothing reads any more."""
         x, y = float(self.cfg.get("overlay.x")), float(self.cfg.get("overlay.y"))
         if x > 2.0 or y > 2.0:
-            self.cfg.set_local("overlay.x", round(min(x / self.screen_w, 0.9), 4))
-            self.cfg.set_local("overlay.y", round(min(y / self.screen_h, 0.9), 4))
-            log.info("overlay: converted the old pixel placement to screen shares")
+            # That placement was made for the first version's 45-pixel box;
+            # it says nothing about where this window should go. Back to the
+            # defaults, the hotkey places it again in two seconds.
+            self.cfg.unset_local("overlay.x")
+            self.cfg.unset_local("overlay.y")
+            log.info("overlay: dropped the old pixel placement, using the default position")
         for key in ("overlay.width", "overlay.height", "overlay.font_px"):
             if self.cfg.get(key, None) is not None:
                 self.cfg.unset_local(key)
