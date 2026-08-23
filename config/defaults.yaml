@@ -257,6 +257,30 @@ audio:
   # pack is set. Keeps the timing realistic before a voice exists.
   placeholder_clip_s: 0.35
 
+# ---------------------------------------------------------------------------
+# On-screen overlay: a transparent, click-through window on top of the game
+# that shows the next corner as an arrow and text. Forza must run in
+# Borderless Windowed (Settings, Video, Display Mode). In exclusive Fullscreen
+# the game draws over everything and the overlay cannot be seen, whatever the
+# settings below say. Start it with the Overlay button on the Drive tab or
+# with "codriver overlay".
+# ---------------------------------------------------------------------------
+overlay:
+  # Key combination that switches edit mode on and off. In edit mode the
+  # window can be dragged by its body and resized at the bottom-right corner;
+  # outside edit mode it is click-through and the game gets every click.
+  hotkey: "ctrl+shift+o"
+  # Where the overlay sits: top-left corner in screen pixels, and its size.
+  # Dragging and resizing in edit mode saves these for you.
+  x: 80
+  y: 80
+  width: 360
+  height: 300
+  # How solid the overlay is, 0.2 (faint) to 1.0 (fully opaque).
+  opacity: 0.9
+  # Size of the note text in pixels. The arrow scales with the window.
+  font_px: 64
+
 community:
   # The public GitHub repo that holds stages shared by other players
   # (owner/name). The Stages tab lists them and can install them; Share

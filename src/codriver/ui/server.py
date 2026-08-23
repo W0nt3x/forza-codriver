@@ -266,17 +266,12 @@ def _type_of(value: Any) -> str:
 
 
 def _set_local(local_path: Path, key: str, value: Any) -> dict:
-    data = yaml.safe_load(local_path.read_text(encoding="utf-8")) if local_path.is_file() else {}
-    data = data or {}
-    node = data
-    parts = key.split(".")
-    for part in parts[:-1]:
-        node = node.setdefault(part, {})
-        if not isinstance(node, dict):
-            raise HTTPException(400, f"{key} collides with a scalar in local.yaml")
-    node[parts[-1]] = value
-    local_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
-    return data
+    from ..config import write_local_value
+
+    try:
+        return write_local_value(local_path, key, value)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _unset_local(local_path: Path, key: str) -> None:

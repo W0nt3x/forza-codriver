@@ -153,6 +153,15 @@ Running your own community repository? The relay is a Cloudflare Worker in
 [relay/](relay/); `community.repo`, `community.relay_url` and
 `community.relay_secret` point the app at yours.
 
+## Overlay on the PC screen
+
+`codriver overlay` (soon a button on the Drive tab) puts a transparent,
+click-through window over the game with the next corner as an arrow and
+text. Forza must run in **Borderless Windowed** (Settings → Video → Display
+Mode); in exclusive Fullscreen the game draws over everything, whatever the
+overlay does. `Ctrl+Shift+O` toggles edit mode to drag and resize it; the
+placement is remembered. Windows only.
+
 ## Your phone as the HUD
 
 The game runs fullscreen, so the Setup tab shows a QR code: scan it with a

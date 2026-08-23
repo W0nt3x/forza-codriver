@@ -86,6 +86,23 @@ def _walk_keys(node: Any, prefix: str = "") -> Iterator[str]:
             yield from _walk_keys(value, path)
 
 
+def write_local_value(local_path: Path, key: str, value: Any) -> dict:
+    """Set one dotted key in local.yaml, creating sections as needed. The one
+    place that writes the user's overrides, shared by the UI and the overlay.
+    Raises ValueError when the key would overwrite a scalar with a section."""
+    data = yaml.safe_load(local_path.read_text(encoding="utf-8")) if local_path.is_file() else {}
+    data = data or {}
+    node = data
+    parts = key.split(".")
+    for part in parts[:-1]:
+        node = node.setdefault(part, {})
+        if not isinstance(node, dict):
+            raise ValueError(f"{key} collides with a scalar in local.yaml")
+    node[parts[-1]] = value
+    local_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return data
+
+
 def _load_yaml(path: Path) -> dict:
     if not path.is_file():
         return {}
@@ -221,6 +238,11 @@ class Config:
             except Exception:
                 log.exception("config reload callback failed")
         return True
+
+    def set_local(self, key: str, value: Any) -> None:
+        """Write one override to local.yaml and take it up at once."""
+        write_local_value(self.local_path, key, value)
+        self.poll(immediate=True)
 
     def on_reload(self, callback: Callable[["Config"], None]) -> None:
         self._callbacks.append(callback)
