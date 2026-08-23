@@ -705,3 +705,45 @@ def test_a_malformed_stage_file_is_a_bad_file_not_a_dead_server(client):
     assert r.status_code == 400 and "not a usable stage file" in r.json()["detail"]
     assert c.post("/api/run", json={"stage": "broken"}).status_code == 400
 
+
+HOSTILE_STRINGS = ["../../../etc/passwd", "..\\..\\win.ini", "x'; drop", "a;b", "x" * 5000]
+
+
+def test_voice_generate_allowlists_engine_voice_and_language(client):
+    c, root, cfg = client
+    for hostile in HOSTILE_STRINGS:
+        assert c.post("/api/voice/generate", json={"lang": "en", "voice": hostile}).status_code == 400, hostile
+        assert c.post("/api/voice/generate", json={"lang": hostile}).status_code == 400, hostile
+        assert c.post("/api/voice/generate", json={"lang": "en", "engine": hostile}).status_code == 400, hostile
+
+
+def test_scan_duration_is_a_bounded_number(client):
+    c, root, cfg = client
+    assert c.post("/api/scan", json={"duration": "abc"}).status_code == 400
+    assert c.post("/api/scan", json={"duration": None}).status_code == 400
+
+
+def test_say_text_is_bounded(client):
+    c, root, cfg = client
+    assert c.post("/api/voice/say", json={"text": "x" * 5000}).status_code == 400
+    assert c.post("/api/voice/say", json={"text": "   "}).status_code == 400
+
+
+def test_config_strings_are_bounded(client):
+    c, root, cfg = client
+    assert c.put("/api/config", json={"key": "audio.voice_pack", "value": "x" * 5000}).status_code == 400
+    assert cfg.get("audio.voice_pack") != "x" * 5000
+
+
+def test_share_author_is_one_line_in_the_file(client, monkeypatch):
+    c, root, cfg = client
+    monkeypatch.setattr("webbrowser.open", lambda *a, **k: True)
+    write_synth(root / "recordings" / "s.fzr",
+                SynthSpec(shape="slalom", duration_s=40.0, speed_mps=18.0, size_m=60.0,
+                          pause_at_s=None, jump_at_s=None))
+    c.post("/api/build", json={"capture": "s.fzr", "name": "Coast Road Sprint"})
+    r = c.post("/api/stages/coast-road-sprint/share", json={"author": "evil\n# heading " + "a" * 100})
+    assert r.status_code == 200, r.text
+    data = yaml.safe_load((root / "stages" / "share" / "coast-road-sprint.json").read_text(encoding="utf-8"))
+    assert "\n" not in data["community"]["author"] and len(data["community"]["author"]) <= 60
+

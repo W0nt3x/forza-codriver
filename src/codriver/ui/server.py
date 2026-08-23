@@ -30,6 +30,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Config
+from ..paths import UnsafePath, inside, resolve_inside
 from .jobs import JobBusy, JobManager
 
 log = logging.getLogger(__name__)
@@ -321,32 +322,19 @@ def _coerce(value: Any, kind: str) -> Any:
 _SAFE_FILE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}\.json$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}$")
 _SAFE_PACK = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,40}$")
-_SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,120}$")
 
 
 def _inside(base: Path, candidate: Path) -> bool:
-    """True when ``candidate``, fully resolved, lives under ``base``. The last
-    word on every path built from a request or a file, whatever the name
-    check before it let through."""
-    try:
-        base_r = base.resolve()
-        cand_r = candidate.resolve()
-    except (OSError, RuntimeError):
-        return False
-    return cand_r == base_r or base_r in cand_r.parents
+    return inside(base, candidate)
 
 
 def _file_under(base: Path, name: object, what: str) -> Path:
-    """``base/<name>`` for a plain file name out of a request or a stage
-    file: no separators of either kind (this is Windows), no ``..``, and the
-    resolved result must stay under ``base``. 400 otherwise."""
-    text = str(name or "").strip()
-    if not _SAFE_FILENAME.match(text) or ".." in text:
-        raise HTTPException(400, f"not a usable {what} name: {text[:80]!r}")
-    path = base / text
-    if not _inside(base, path):
-        raise HTTPException(400, f"{what} {text[:80]!r} is outside its folder")
-    return path
+    """``base/<name>`` through the one path helper (codriver.paths), with
+    its refusal turned into a 400."""
+    try:
+        return resolve_inside(base, name, what)
+    except UnsafePath as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def _stage_path(stages_dir: Path, name: object):
@@ -700,7 +688,10 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
     async def scan(body: dict | None = None) -> dict:
         from ..net import scan as scanner
 
-        duration = float((body or {}).get("duration", 20.0))
+        try:
+            duration = min(120.0, max(1.0, float((body or {}).get("duration", 20.0))))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "duration must be a number of seconds") from None
 
         def job(emit, should_stop):
             ports = scanner.parse_port_spec(scanner.DEFAULT_SPEC)
@@ -730,12 +721,13 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
     async def capture(body: dict) -> dict:
         from ..record.capture import default_capture_path
         from ..record.recon import capture_stream
+        from ..stage.schema import clean_text
 
         name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or "")).strip("-").lower() or None
         path = default_capture_path(recordings_dir, name)
 
         def job(emit, should_stop):
-            return capture_stream(cfg, path, note=body.get("note", ""),
+            return capture_stream(cfg, path, note=clean_text(body.get("note", ""), 200),
                                   on_event=emit, should_stop=should_stop)
 
         return _start("capture", job, f"recording {path.name}")
@@ -871,6 +863,8 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         except KeyError:
             raise HTTPException(404, f"unknown config key {key}")
         value = _coerce(body.get("value"), _type_of(current) if current is not None else body.get("type", "str"))
+        if isinstance(value, str) and len(value) > 2000:
+            raise HTTPException(400, "value too long")
         if key == "audio.device" and value in ("", "default", "None"):
             value = None  # the Windows default output
         _set_local(cfg.local_path, key, value)
@@ -889,17 +883,24 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
     @app.post("/api/voice/generate")
     async def voice_generate(body: dict) -> dict:
-        from ..voice.generate import generate_pack
+        from ..voice.generate import ENGINES, VOICE_NAME, generate_pack
+        from ..voice.vocab import VOCABULARIES
 
-        lang = body.get("lang", "en")
+        lang = str(body.get("lang", "en"))
         name = str(body.get("name") or ("default" if lang == "en" else lang)).strip().lower()
         if not _SAFE_PACK.match(name):
             raise HTTPException(400, "pack name: lowercase letters, digits, - and _, nothing else")
         pack_dir = voices_dir / name
         if not _inside(voices_dir, pack_dir):
             raise HTTPException(400, "pack name is outside the voices folder")
-        engine = body.get("engine", "edge")
-        voice = body.get("voice") or None
+        engine = str(body.get("engine", "edge"))
+        voice = str(body.get("voice") or "").strip() or None
+        if lang not in VOCABULARIES:
+            raise HTTPException(400, f"unknown language {lang!r}; one of {sorted(VOCABULARIES)}")
+        if engine not in ENGINES:
+            raise HTTPException(400, "engine is 'edge' or 'sapi'")
+        if voice is not None and not VOICE_NAME.match(voice):
+            raise HTTPException(400, "voice name: letters, digits, spaces, ()._+- only")
 
         def job(emit, should_stop):
             emit({"kind": "voice_started", "name": name, "lang": lang, "engine": engine})
@@ -926,7 +927,10 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..runtime.player import BeepBank, make_player
         from ..voice.pack import load_configured_bank
 
-        tokens = [t for t in str(body.get("text", "")).split() if t]
+        text = str(body.get("text", ""))
+        if len(text) > 400:
+            raise HTTPException(400, "that is a speech, not a pace note; 400 characters at most")
+        tokens = [t[:40] for t in text.split() if t][:40]
         if not tokens:
             raise HTTPException(400, "nothing to say")
         pack = str(body.get("pack") or "").strip() or None
@@ -1050,7 +1054,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
     async def stage_share(name: str, body: dict | None = None) -> dict:
         import webbrowser
 
-        from ..stage.schema import load, to_dict
+        from ..stage.schema import clean_text, load, to_dict
 
         path = _stage_path(stages_dir, name)
         if not path.is_file():
@@ -1068,7 +1072,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         # same recon is recognisable if shared twice.
         data["community"] = {
             "race": st.name,
-            "author": str((body or {}).get("author", "")).strip()[:60],
+            "author": clean_text((body or {}).get("author", ""), 60),
             "tool_version": __import__("codriver").__version__,
             "shared_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }

@@ -275,3 +275,60 @@ def test_configured_bank_is_found_from_any_working_directory(tmp_path, monkeypat
     bank = load_configured_bank(cfg, BeepBank())
     assert isinstance(bank, WavBank)
     assert bank.name == "mine"
+
+
+# --------------------------------------------------------------------------
+# hostile input at the voice boundaries
+# --------------------------------------------------------------------------
+
+
+def test_manifest_clip_names_cannot_leave_the_pack(tmp_path):
+    """A manifest is foreign input like a stage file. "../x.wav" must be
+    reported as a bad entry, never read."""
+    import yaml as _yaml
+
+    from codriver.voice.pack import VoicePackError, check_pack, load_pack
+
+    outside = tmp_path / "secret.wav"
+    outside.write_bytes(b"RIFF")
+    pack = tmp_path / "evil"
+    pack.mkdir()
+    (pack / "manifest.yaml").write_text(_yaml.safe_dump({
+        "name": "evil", "language": "en",
+        "tokens": {"1": "../secret.wav", "2": "..\\secret.wav", "3": "/etc/passwd", "left": "left.wav"},
+    }), encoding="utf-8")
+    report = check_pack(pack)
+    assert len(report.bad_files) == 3 and "left" not in " ".join(report.bad_files)
+    assert any("left.wav" in m for m in report.missing_files)
+    with pytest.raises(VoicePackError):
+        load_pack(pack, 48000, 0.02)
+
+
+def test_sapi_script_never_takes_a_voice_name_it_did_not_allowlist(tmp_path):
+    """The SAPI path is the one place a value reaches an interpreter. The
+    voice name is allowlisted and quoted, both; texts are quoted."""
+    from codriver.voice.generate import GenerationError, _sapi_script
+
+    for hostile in ("Zira'); Start-Process calc; #", "x; y", "a`nb", "x' + (Get-Content secret) + '"):
+        with pytest.raises(GenerationError):
+            _sapi_script({"1": "one"}, hostile, tmp_path)
+    script = _sapi_script({"1": "don't cut", "2": "two"}, "Microsoft Zira Desktop", tmp_path)
+    assert "$s.SelectVoice('Microsoft Zira Desktop');" in script
+    assert "$s.Speak('don''t cut');" in script, "quotes are doubled, not passed through"
+    assert script.count("SetOutputToWaveFile") == 2
+
+
+def test_generate_pack_refuses_hostile_parameters_before_doing_anything(tmp_path):
+    from codriver.voice.generate import GenerationError, generate_pack
+
+    for kwargs in (
+        dict(engine="bash"),
+        dict(engine="edge", voice="x'; rm -rf /"),
+        dict(engine="edge", rate="; calc"),
+        dict(engine="edge", language="../../etc"),
+        dict(engine="sapi", voice="Zira'); Start-Process calc; #"),
+    ):
+        with pytest.raises(GenerationError):
+            generate_pack(tmp_path / "p", **kwargs)
+    assert not (tmp_path / "p").exists(), "refused before the folder was even made"
+

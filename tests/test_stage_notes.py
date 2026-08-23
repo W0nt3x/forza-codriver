@@ -483,3 +483,69 @@ def test_a_stage_file_without_per_point_telemetry_still_loads():
     back = from_dict(data)
     assert len(back.line) == 5
     assert all(p.susp_max == 1.0 and p.wet_wheels == 0 for p in back.line)
+
+
+# --------------------------------------------------------------------------
+# the stage loader is a boundary: caps and coercion
+# --------------------------------------------------------------------------
+
+
+def test_stage_loader_coerces_types_at_the_boundary():
+    from codriver.stage.schema import Stage, from_dict, to_dict
+
+    data = to_dict(Stage(name="t"))
+    data["line"] = [["1.5", "2", 3], [4, 5, 6]]
+    data["recon_speed_kmh"] = ["36", 72]
+    data["notes"] = [{"at_m": "30", "tokens": ["3", "right"], "index": "7", "severity": "3", "radius_m": "40.5"}]
+    st = from_dict(data)
+    assert st.line[0].x == 1.5 and st.line[0].speed == pytest.approx(10.0)
+    assert st.notes[0].at_m == 30.0 and st.notes[0].index == 7 and st.notes[0].severity == 3
+    assert st.notes[0].radius_m == 40.5
+
+
+@pytest.mark.parametrize("bad", [
+    {"line": "not a list"},
+    {"notes": {"at_m": 1}},
+    {"line": [["a", 0, 0]]},
+    {"notes": [{"at_m": 1, "tokens": 5}]},
+    {"notes": [{"at_m": 1, "tokens": []}]},
+    {"notes": [{"at_m": 1, "tokens": ["1"] * 25}]},
+    {"notes": [{"at_m": "soon", "tokens": ["1"]}]},
+    {"markings": ["R"]},
+    {"spacing_m": None},
+])
+def test_structural_garbage_is_a_bad_file_not_a_crash(bad):
+    from codriver.stage.schema import Stage, StageError, from_dict, to_dict
+
+    data = to_dict(Stage(name="t"))
+    data.update(bad)
+    with pytest.raises(StageError):
+        from_dict(data)
+
+
+def test_stage_loader_caps_allocations(monkeypatch):
+    from codriver.stage import schema
+    from codriver.stage.schema import Stage, StageError, from_dict, to_dict
+
+    monkeypatch.setattr(schema, "MAX_POINTS", 10)
+    monkeypatch.setattr(schema, "MAX_NOTES", 3)
+    data = to_dict(Stage(name="t"))
+    data["line"] = [[0, 0, 0]] * 11
+    with pytest.raises(StageError):
+        from_dict(data)
+    data = to_dict(Stage(name="t"))
+    data["notes"] = [{"at_m": 1, "tokens": ["1"]}] * 4
+    with pytest.raises(StageError):
+        from_dict(data)
+
+
+def test_stage_files_have_a_size_limit(tmp_path, monkeypatch):
+    from codriver.stage import schema
+    from codriver.stage.schema import StageError, load
+
+    monkeypatch.setattr(schema, "MAX_FILE_BYTES", 100)
+    big = tmp_path / "big.json"
+    big.write_text("{" + " " * 200 + "}", encoding="utf-8")
+    with pytest.raises(StageError):
+        load(big)
+

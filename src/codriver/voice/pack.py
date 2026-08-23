@@ -34,6 +34,7 @@ import yaml
 
 from ..audio import ConcatBank, load_clip
 from ..config import Config
+from ..paths import UnsafePath, resolve_inside
 from ..runtime.player import BeepBank
 
 log = logging.getLogger(__name__)
@@ -94,17 +95,35 @@ class WavBank(ConcatBank):
         return self.fallback.clip(token)
 
 
+MAX_MANIFEST_BYTES = 1_000_000
+MAX_MANIFEST_TOKENS = 1_000
+
+
 def read_manifest(pack_dir: Path) -> dict:
+    """The manifest, with its shape checked. A pack may have been dropped in
+    by hand or sent by a friend, so it is foreign input like a stage file."""
     manifest_path = pack_dir / MANIFEST_NAME
     if not manifest_path.is_file():
         raise VoicePackError(f"{pack_dir} has no {MANIFEST_NAME}")
+    if manifest_path.stat().st_size > MAX_MANIFEST_BYTES:
+        raise VoicePackError(f"{manifest_path} is absurdly large for a manifest")
     with manifest_path.open("r", encoding="utf-8") as fh:
-        manifest = yaml.safe_load(fh)
+        try:
+            manifest = yaml.safe_load(fh)
+        except yaml.YAMLError as exc:
+            raise VoicePackError(f"{manifest_path} is not valid YAML: {exc}") from exc
     if not isinstance(manifest, dict) or not isinstance(manifest.get("tokens"), dict):
         raise VoicePackError(
             f"{manifest_path} must be a mapping with a 'tokens' section"
         )
+    if len(manifest["tokens"]) > MAX_MANIFEST_TOKENS:
+        raise VoicePackError(f"{manifest_path} lists more than {MAX_MANIFEST_TOKENS} tokens")
     return manifest
+
+
+def _clip_path(pack_dir: Path, filename: object) -> Path:
+    """A manifest entry's file, which must be a plain name inside the pack."""
+    return resolve_inside(pack_dir, filename, "clip")
 
 
 def check_pack(pack_dir: Path | str, samplerate: int = 48000) -> PackReport:
@@ -113,9 +132,13 @@ def check_pack(pack_dir: Path | str, samplerate: int = 48000) -> PackReport:
     pack_dir = Path(pack_dir)
     manifest = read_manifest(pack_dir)
     report = PackReport(name=manifest.get("name", pack_dir.name), path=pack_dir)
-    for token, filename in sorted(manifest["tokens"].items()):
+    for token, filename in sorted(manifest["tokens"].items(), key=lambda kv: str(kv[0])):
         report.tokens.append(str(token))
-        wav = pack_dir / str(filename)
+        try:
+            wav = _clip_path(pack_dir, filename)
+        except UnsafePath as exc:
+            report.bad_files.append(f"{token} -> {exc}")
+            continue
         if not wav.is_file():
             report.missing_files.append(f"{token} -> {filename}")
             continue
@@ -139,11 +162,11 @@ def load_pack(
     clips: dict[str, np.ndarray] = {}
     broken: list[str] = []
     for token, filename in manifest["tokens"].items():
-        wav = pack_dir / str(filename)
         try:
+            wav = _clip_path(pack_dir, filename)
             clips[str(token)] = load_clip(wav, samplerate)
         except Exception as exc:
-            broken.append(f"{token} -> {filename} ({exc})")
+            broken.append(f"{token} -> {exc}")
     if broken:
         raise VoicePackError(
             f"voice pack {pack_dir} has unreadable clips:\n  " + "\n  ".join(broken)

@@ -29,6 +29,15 @@ from .notes import Note
 STAGE_FORMAT = "codriver-stage"
 STAGE_VERSION = 1
 
+# Allocation caps for a file that may come from anywhere. The relay enforces
+# similar limits at upload; these are the defense, because files reach the
+# loader without passing the relay (a friend, a hand edit, a ZIP).
+MAX_FILE_BYTES = 30_000_000
+MAX_POINTS = 200_000
+MAX_NOTES = 5_000
+MAX_TOKENS_PER_NOTE = 24
+MAX_PARTS = 8
+
 
 def clean_text(value: object, max_len: int = 80) -> str:
     """One line, trimmed, capped. Applied to every string a stage file
@@ -134,7 +143,40 @@ def to_dict(stage: Stage) -> dict[str, Any]:
     }
 
 
+def _num(value: object) -> float | None:
+    return None if value is None else float(value)
+
+
+def _note_from(n: object) -> Note:
+    if not isinstance(n, dict):
+        raise ValueError("a note must be an object")
+    toks = n.get("tokens")
+    if not isinstance(toks, list) or not 1 <= len(toks) <= MAX_TOKENS_PER_NOTE:
+        raise ValueError(f"a note needs 1 to {MAX_TOKENS_PER_NOTE} tokens")
+    parts = n.get("parts") or []
+    if not isinstance(parts, list) or len(parts) > MAX_PARTS:
+        raise ValueError("bad parts")
+    direction = n.get("direction")
+    severity = n.get("severity")
+    return Note(
+        at_m=float(n["at_m"]),
+        tokens=[clean_text(t, 40) for t in toks],
+        index=int(n.get("index", 0)),
+        kind=clean_text(n.get("kind", "corner"), 20) or "corner",
+        direction=clean_text(direction, 10) if direction is not None else None,
+        severity=int(severity) if severity is not None else None,
+        radius_m=_num(n.get("radius_m")),
+        parts=[p for p in parts if isinstance(p, dict)],
+        length_m=_num(n.get("length_m")),
+        observed_kmh=_num(n.get("observed_kmh")),
+    )
+
+
 def from_dict(data: dict[str, Any]) -> Stage:
+    """A stage from its JSON. Every value is coerced and every list is
+    capped here, at the boundary: a stage file is foreign input, and a
+    string where a number belongs must fail here as a bad file, not three
+    layers down inside numpy as a crash."""
     if not isinstance(data, dict):
         raise StageError("not a stage file: not a JSON object")
     if data.get("format") != STAGE_FORMAT:
@@ -144,58 +186,52 @@ def from_dict(data: dict[str, Any]) -> Stage:
             f"stage file is version {data.get('version')}, "
             f"this build reads {STAGE_VERSION}"
         )
+    raw_line = data.get("line", [])
+    raw_notes = data.get("notes", [])
+    raw_marks = data.get("markings", [])
+    if not all(isinstance(v, list) for v in (raw_line, raw_notes, raw_marks)):
+        raise StageError("malformed stage file: line, notes and markings must be lists")
+    if len(raw_line) > MAX_POINTS or len(raw_marks) > MAX_POINTS:
+        raise StageError(f"stage file too large: more than {MAX_POINTS} points")
+    if len(raw_notes) > MAX_NOTES:
+        raise StageError(f"stage file too large: more than {MAX_NOTES} notes")
 
-    # A stage file is foreign input: structural garbage (a number where a
-    # list belongs, a missing key) is a bad file, not a crash of the server
-    # that lists the folder it sits in.
+    def series(key: str) -> list:
+        value = (data.get("telemetry") or {}).get(key) if key != "recon_speed_kmh" else data.get(key)
+        return value if isinstance(value, list) else []
+
+    speeds, steer, susp_max, wet_wheels = (
+        series("recon_speed_kmh"), series("steer"), series("susp_max"), series("wet_wheels"))
+
+    def at(values: list, i: int, default: float) -> float:
+        # Older stage files carry none of these; they load as they always did.
+        return values[i] if i < len(values) else default
+
     try:
-        speeds = data.get("recon_speed_kmh") or []
-        telemetry = data.get("telemetry") or {}
-        steer = telemetry.get("steer") or []
-        susp_max = telemetry.get("susp_max") or []
-        wet_wheels = telemetry.get("wet_wheels") or []
-
-        def at(values: list, i: int, default: float) -> float:
-            # Older stage files carry none of these; they load as they always did.
-            return values[i] if i < len(values) else default
-
         line = [
             LinePoint(
-                x=xyz[0],
-                y=xyz[1],
-                z=xyz[2],
-                speed=at(speeds, i, 0.0) / 3.6,
+                x=float(xyz[0]),
+                y=float(xyz[1]),
+                z=float(xyz[2]),
+                speed=float(at(speeds, i, 0.0)) / 3.6,
                 steer=float(at(steer, i, 0.0)),
                 susp_max=float(at(susp_max, i, 1.0)),
                 wet_wheels=int(at(wet_wheels, i, 0)),
             )
-            for i, xyz in enumerate(data.get("line", []))
+            for i, xyz in enumerate(raw_line)
         ]
-        notes = [
-            Note(
-                at_m=n["at_m"],
-                tokens=[clean_text(t, 40) for t in n["tokens"]],
-                index=n.get("index", 0),
-                kind=clean_text(n.get("kind", "corner"), 20) or "corner",
-                direction=clean_text(n["direction"], 10) if n.get("direction") is not None else None,
-                severity=n.get("severity"),
-                radius_m=n.get("radius_m"),
-                parts=n.get("parts", []),
-                length_m=n.get("length_m"),
-                observed_kmh=n.get("observed_kmh"),
-            )
-            for n in data.get("notes", [])
-        ]
+        notes = [_note_from(n) for n in raw_notes]
+        markings = [_marking_from_label(str(m)) for m in raw_marks]
         return Stage(
             name=clean_text(data.get("name", "unnamed"), 80) or "unnamed",
             line=line,
-            markings=[_marking_from_label(m) for m in data.get("markings", [])],
+            markings=markings,
             notes=notes,
-            spacing_m=data.get("spacing_m", 3.0),
-            length_m=data.get("length_m", 0.0),
-            source=data.get("source", {}),
-            config=data.get("config", {}),
-            generator=data.get("generator", {}),
+            spacing_m=float(data.get("spacing_m", 3.0)),
+            length_m=float(data.get("length_m", 0.0)),
+            source=data.get("source") if isinstance(data.get("source"), dict) else {},
+            config=data.get("config") if isinstance(data.get("config"), dict) else {},
+            generator=data.get("generator") if isinstance(data.get("generator"), dict) else {},
         )
     except (TypeError, ValueError, KeyError, AttributeError, IndexError) as exc:
         raise StageError(f"malformed stage file: {exc}") from exc
@@ -212,9 +248,18 @@ def save(stage: Stage, path: Path | str) -> Path:
 def load(path: Path | str) -> Stage:
     path = Path(path)
     try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise StageError(f"{path}: {exc}") from exc
+    if size > MAX_FILE_BYTES:
+        raise StageError(
+            f"{path.name} is {size // 1_000_000} MB; a stage file is under "
+            f"{MAX_FILE_BYTES // 1_000_000} MB"
+        )
+    try:
         with path.open("r", encoding="utf-8") as fh:
             return from_dict(json.load(fh))
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StageError(f"{path} is not valid JSON: {exc}") from exc
 
 

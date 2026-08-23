@@ -25,6 +25,7 @@ loadable by ``pack.py``.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ import numpy as np
 import yaml
 
 from ..audio import fade_edges, resample
+from ..paths import resolve_inside
 from .vocab import DEFAULT_VOICES, spoken_text, vocabulary
 
 log = logging.getLogger(__name__)
@@ -159,6 +161,36 @@ def _synthesize_edge(texts: dict[str, str], voice: str, rate: str) -> dict[str, 
     return out
 
 
+ENGINES = ("edge", "sapi")
+VOICE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ()._+\-]{0,80}$")
+"""What a TTS voice name may look like ("en-GB-RyanNeural", "Microsoft Zira
+Desktop"). Anything else is refused before it reaches a shell or a network
+call; the SAPI path also quotes it, allowlist *and* escape, never one."""
+RATE = re.compile(r"^[+-]\d{1,3}%$")
+
+
+def _ps_quote(text: str) -> str:
+    """A PowerShell single-quoted string literal: only the quote needs doubling."""
+    return "'" + str(text).replace("'", "''") + "'"
+
+
+def _sapi_script(texts: dict[str, str], voice: str | None, tmp_dir: Path) -> str:
+    """The PowerShell that drives System.Speech. Every interpolated value is
+    a quoted literal; the voice name was allowlisted on the way in."""
+    if voice is not None and not VOICE_NAME.match(voice):
+        raise GenerationError("voice name: letters, digits, spaces, ()._+- only")
+    lines = ["Add-Type -AssemblyName System.Speech;",
+             "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;",
+             f"$s.SelectVoice({_ps_quote(voice)});" if voice else "",
+             "$s.Rate = 1;"]
+    for token, text in texts.items():
+        wav = resolve_inside(tmp_dir, f"{token}.wav", "clip")
+        lines.append(f"$s.SetOutputToWaveFile({_ps_quote(str(wav))});")
+        lines.append(f"$s.Speak({_ps_quote(text)});")
+    lines.append("$s.SetOutputToNull(); $s.Dispose();")
+    return "\n".join(lines)
+
+
 def _synthesize_sapi(texts: dict[str, str], voice: str | None, rate: str) -> dict[str, tuple[np.ndarray, int]]:
     """All tokens through the offline Windows System.Speech voices."""
     import soundfile as sf
@@ -166,21 +198,8 @@ def _synthesize_sapi(texts: dict[str, str], voice: str | None, rate: str) -> dic
     out: dict[str, tuple[np.ndarray, int]] = {}
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        select = (
-            f"$s.SelectVoice('{voice}');" if voice else ""
-        )
-        lines = ["Add-Type -AssemblyName System.Speech;",
-                 "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;",
-                 select,
-                 "$s.Rate = 1;"]
-        for token, text in texts.items():
-            wav = tmp_dir / f"{token}.wav"
-            safe = text.replace("'", "''")
-            lines.append(f"$s.SetOutputToWaveFile('{wav}');")
-            lines.append(f"$s.Speak('{safe}');")
-        lines.append("$s.SetOutputToNull(); $s.Dispose();")
         script = tmp_dir / "gen.ps1"
-        script.write_text("\n".join(lines), encoding="utf-8")
+        script.write_text(_sapi_script(texts, voice, tmp_dir), encoding="utf-8")
         result = subprocess.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
             capture_output=True,
@@ -232,9 +251,21 @@ def generate_pack(
     """
     import soundfile as sf
 
+    # Everything here may have come from a request body or a command line.
+    if engine not in ENGINES:
+        raise GenerationError(f"unknown engine {engine!r}; use 'edge' or 'sapi'")
+    if voice is not None and not VOICE_NAME.match(str(voice)):
+        raise GenerationError("voice name: letters, digits, spaces, ()._+- only")
+    if not RATE.match(str(rate)):
+        raise GenerationError("rate looks like +15% or -10%")
+    try:
+        vocab = vocabulary(language)
+    except ValueError as exc:
+        raise GenerationError(str(exc)) from exc
     out_dir = Path(out_dir)
-    vocab = vocabulary(language)
     texts = dict(tokens or {t: spoken_text(t, language) for t in vocab})
+    for token in texts:
+        resolve_inside(out_dir, f"{token}.wav", "clip")  # a token is a file name later
 
     if engine == "edge":
         voice = voice or DEFAULT_VOICES.get(language)
