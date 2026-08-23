@@ -321,6 +321,32 @@ def _coerce(value: Any, kind: str) -> Any:
 _SAFE_FILE = re.compile(r"^[a-z0-9][a-z0-9\-]{0,80}\.json$")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}$")
 _SAFE_PACK = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,40}$")
+_SAFE_FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,120}$")
+
+
+def _inside(base: Path, candidate: Path) -> bool:
+    """True when ``candidate``, fully resolved, lives under ``base``. The last
+    word on every path built from a request or a file, whatever the name
+    check before it let through."""
+    try:
+        base_r = base.resolve()
+        cand_r = candidate.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return cand_r == base_r or base_r in cand_r.parents
+
+
+def _file_under(base: Path, name: object, what: str) -> Path:
+    """``base/<name>`` for a plain file name out of a request or a stage
+    file: no separators of either kind (this is Windows), no ``..``, and the
+    resolved result must stay under ``base``. 400 otherwise."""
+    text = str(name or "").strip()
+    if not _SAFE_FILENAME.match(text) or ".." in text:
+        raise HTTPException(400, f"not a usable {what} name: {text[:80]!r}")
+    path = base / text
+    if not _inside(base, path):
+        raise HTTPException(400, f"{what} {text[:80]!r} is outside its folder")
+    return path
 
 
 def _stage_path(stages_dir: Path, name: object):
@@ -328,11 +354,29 @@ def _stage_path(stages_dir: Path, name: object):
 
     The name comes from a URL or a request body, so anything with a
     separator (either kind, this is Windows), a drive letter or ``..`` is
-    refused before it touches the filesystem."""
+    refused before it touches the filesystem, and the result is checked
+    to really be under stages/."""
     text = str(name or "")
     if not _SAFE_NAME.match(text) or ".." in text:
         raise HTTPException(400, f"not a stage name: {text!r}")
-    return stages_dir / f"{text}.json"
+    path = stages_dir / f"{text}.json"
+    if not _inside(stages_dir, path):
+        raise HTTPException(400, f"not a stage name: {text!r}")
+    return path
+
+
+def _clean_community(value: object) -> dict:
+    """The community block of a shared file, for display: one line each."""
+    from ..stage.schema import clean_text
+
+    if not isinstance(value, dict):
+        return {}
+    return {
+        "race": clean_text(value.get("race"), 80),
+        "author": clean_text(value.get("author"), 60),
+        "tool_version": clean_text(value.get("tool_version"), 20),
+        "shared_utc": clean_text(value.get("shared_utc"), 32),
+    }
 """Community stage file names: lowercase slug plus .json, nothing that could
 climb out of the stages folder."""
 
@@ -721,9 +765,9 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         from ..stage.build import build_stage
         from ..stage.schema import save
 
-        capture = recordings_dir / str(body.get("capture", ""))
+        capture = _file_under(recordings_dir, body.get("capture"), "recording")
         if not capture.is_file():
-            raise HTTPException(404, f"no recording {body.get('capture')}")
+            raise HTTPException(404, f"no recording {capture.name}")
         name = re.sub(r"[^\w\-]+", "-", str(body.get("name") or capture.stem)).strip("-").lower()
         try:
             stage, report = await asyncio.get_running_loop().run_in_executor(
@@ -763,9 +807,17 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         if not path.is_file():
             raise HTTPException(404, f"no stage {name}")
         st = load(path)
-        capture = recordings_dir / str(st.source.get("capture", ""))
+        try:
+            # source.capture was written by the builder, but the file may have
+            # come from anywhere since, and anywhere can write anything there.
+            capture = _file_under(recordings_dir, st.source.get("capture", ""), "recording")
+        except HTTPException as exc:
+            raise HTTPException(
+                400, "this stage does not name a usable recording of its own; "
+                     "record and build it on the Setup tab instead",
+            ) from exc
         if not capture.is_file():
-            raise HTTPException(400, f"source recording {st.source.get('capture')} is gone")
+            raise HTTPException(400, f"source recording {capture.name} is gone")
         stage, report = await asyncio.get_running_loop().run_in_executor(
             None, lambda: build_stage(capture, cfg, name=name)
         )
@@ -843,12 +895,15 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         name = str(body.get("name") or ("default" if lang == "en" else lang)).strip().lower()
         if not _SAFE_PACK.match(name):
             raise HTTPException(400, "pack name: lowercase letters, digits, - and _, nothing else")
+        pack_dir = voices_dir / name
+        if not _inside(voices_dir, pack_dir):
+            raise HTTPException(400, "pack name is outside the voices folder")
         engine = body.get("engine", "edge")
         voice = body.get("voice") or None
 
         def job(emit, should_stop):
             emit({"kind": "voice_started", "name": name, "lang": lang, "engine": engine})
-            result = generate_pack(voices_dir / name, engine=engine, voice=voice,
+            result = generate_pack(pack_dir, engine=engine, voice=voice,
                                    samplerate=cfg.get("audio.samplerate"), language=lang)
             # If the configured pack does not exist, this new one becomes the
             # active voice right away. Nobody should generate a voice and then
@@ -874,7 +929,9 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         tokens = [t for t in str(body.get("text", "")).split() if t]
         if not tokens:
             raise HTTPException(400, "nothing to say")
-        pack = body.get("pack")
+        pack = str(body.get("pack") or "").strip() or None
+        if pack:
+            _file_under(voices_dir, pack, "voice pack")  # validation only; the loader builds the path
 
         def speak() -> float:
             snapshot = dict(cfg.data["audio"])
@@ -959,7 +1016,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             "runs": [],
             "file": file,
             "installed": (stages_dir / file).is_file(),
-            "community": data.get("community", {}) if isinstance(data.get("community"), dict) else {},
+            "community": _clean_community(data.get("community")),
         }
 
     @app.post("/api/community/install")
@@ -981,7 +1038,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             raise HTTPException(502, f"the shared file is not a valid stage: {exc}") from exc
         except Exception as exc:
             raise HTTPException(502, f"download failed: {exc}") from exc
-        dest = stages_dir / file
+        dest = _file_under(stages_dir, file, "stage")
         if dest.exists() and not body.get("overwrite"):
             raise HTTPException(409, f"you already have a stage named {file[:-5]}")
         stage.generator = {**stage.generator, "installed_from": f"{repo}/stages/{file}"}
@@ -1077,6 +1134,14 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             pass
         finally:
             sockets.discard(websocket)
+
+    from ..stage.schema import StageError
+    from fastapi.responses import JSONResponse
+
+    @app.exception_handler(StageError)
+    async def _bad_stage(_request, exc: StageError) -> JSONResponse:
+        # A broken or foreign file is the request's problem, not the server's.
+        return JSONResponse({"detail": f"not a usable stage file: {exc}"}, status_code=400)
 
     app.add_middleware(BrowserGuard)
     return app

@@ -30,6 +30,14 @@ STAGE_FORMAT = "codriver-stage"
 STAGE_VERSION = 1
 
 
+def clean_text(value: object, max_len: int = 80) -> str:
+    """One line, trimmed, capped. Applied to every string a stage file
+    carries that ends up on screen, in a file name or in a pull request: a
+    stage file is foreign input, wherever it came from."""
+    text = " ".join(str(value if value is not None else "").split())
+    return text[:max_len]
+
+
 def safe_stem(name: str) -> str:
     """A stage name reduced to what may appear in a file name.
 
@@ -127,6 +135,8 @@ def to_dict(stage: Stage) -> dict[str, Any]:
 
 
 def from_dict(data: dict[str, Any]) -> Stage:
+    if not isinstance(data, dict):
+        raise StageError("not a stage file: not a JSON object")
     if data.get("format") != STAGE_FORMAT:
         raise StageError(f"not a stage file: format={data.get('format')!r}")
     if data.get("version") != STAGE_VERSION:
@@ -135,55 +145,60 @@ def from_dict(data: dict[str, Any]) -> Stage:
             f"this build reads {STAGE_VERSION}"
         )
 
-    speeds = data.get("recon_speed_kmh") or []
-    telemetry = data.get("telemetry") or {}
-    steer = telemetry.get("steer") or []
-    susp_max = telemetry.get("susp_max") or []
-    wet_wheels = telemetry.get("wet_wheels") or []
+    # A stage file is foreign input: structural garbage (a number where a
+    # list belongs, a missing key) is a bad file, not a crash of the server
+    # that lists the folder it sits in.
+    try:
+        speeds = data.get("recon_speed_kmh") or []
+        telemetry = data.get("telemetry") or {}
+        steer = telemetry.get("steer") or []
+        susp_max = telemetry.get("susp_max") or []
+        wet_wheels = telemetry.get("wet_wheels") or []
 
-    def at(values: list, i: int, default: float) -> float:
-        # Older stage files carry none of these; they load as they always did.
-        return values[i] if i < len(values) else default
+        def at(values: list, i: int, default: float) -> float:
+            # Older stage files carry none of these; they load as they always did.
+            return values[i] if i < len(values) else default
 
-    line = [
-        LinePoint(
-            x=xyz[0],
-            y=xyz[1],
-            z=xyz[2],
-            speed=at(speeds, i, 0.0) / 3.6,
-            steer=float(at(steer, i, 0.0)),
-            susp_max=float(at(susp_max, i, 1.0)),
-            wet_wheels=int(at(wet_wheels, i, 0)),
+        line = [
+            LinePoint(
+                x=xyz[0],
+                y=xyz[1],
+                z=xyz[2],
+                speed=at(speeds, i, 0.0) / 3.6,
+                steer=float(at(steer, i, 0.0)),
+                susp_max=float(at(susp_max, i, 1.0)),
+                wet_wheels=int(at(wet_wheels, i, 0)),
+            )
+            for i, xyz in enumerate(data.get("line", []))
+        ]
+        notes = [
+            Note(
+                at_m=n["at_m"],
+                tokens=[clean_text(t, 40) for t in n["tokens"]],
+                index=n.get("index", 0),
+                kind=clean_text(n.get("kind", "corner"), 20) or "corner",
+                direction=clean_text(n["direction"], 10) if n.get("direction") is not None else None,
+                severity=n.get("severity"),
+                radius_m=n.get("radius_m"),
+                parts=n.get("parts", []),
+                length_m=n.get("length_m"),
+                observed_kmh=n.get("observed_kmh"),
+            )
+            for n in data.get("notes", [])
+        ]
+        return Stage(
+            name=clean_text(data.get("name", "unnamed"), 80) or "unnamed",
+            line=line,
+            markings=[_marking_from_label(m) for m in data.get("markings", [])],
+            notes=notes,
+            spacing_m=data.get("spacing_m", 3.0),
+            length_m=data.get("length_m", 0.0),
+            source=data.get("source", {}),
+            config=data.get("config", {}),
+            generator=data.get("generator", {}),
         )
-        for i, xyz in enumerate(data.get("line", []))
-    ]
-    notes = [
-        Note(
-            at_m=n["at_m"],
-            tokens=list(n["tokens"]),
-            index=n.get("index", 0),
-            kind=n.get("kind", "corner"),
-            direction=n.get("direction"),
-            severity=n.get("severity"),
-            radius_m=n.get("radius_m"),
-            parts=n.get("parts", []),
-            length_m=n.get("length_m"),
-            observed_kmh=n.get("observed_kmh"),
-        )
-        for n in data.get("notes", [])
-    ]
-    return Stage(
-        name=data.get("name", "unnamed"),
-        line=line,
-        markings=[_marking_from_label(m) for m in data.get("markings", [])],
-        notes=notes,
-        spacing_m=data.get("spacing_m", 3.0),
-        length_m=data.get("length_m", 0.0),
-        source=data.get("source", {}),
-        config=data.get("config", {}),
-        generator=data.get("generator", {}),
-    )
-
+    except (TypeError, ValueError, KeyError, AttributeError, IndexError) as exc:
+        raise StageError(f"malformed stage file: {exc}") from exc
 
 def save(stage: Stage, path: Path | str) -> Path:
     path = Path(path)

@@ -626,3 +626,82 @@ def test_downloads_are_bounded(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Resp(10))
     assert _http_get("https://example.invalid/small.json") == b"x" * 10
 
+
+def _poisoned_stage(root, name, **source):
+    from codriver.stage.curvature import STRAIGHT
+    from codriver.stage.line import LinePoint
+    from codriver.stage.schema import Stage, save
+
+    st = Stage(name=name, line=[LinePoint(x=float(i) * 3, y=0.0, z=0.0) for i in range(12)],
+               markings=[STRAIGHT] * 12, source=source)
+    save(st, root / "stages" / f"{name}.json")
+
+
+def test_rebuild_does_not_follow_a_recording_path_from_inside_the_stage_file(client):
+    """source.capture is written by the builder, but a stage file can come
+    from anywhere since, and say "../../../../etc/passwd" there."""
+    c, root, cfg = client
+    (root / "victim.fzr").write_bytes(b"FZRAW")  # exists, so only the path check can stop it
+    for bad in ("../victim.fzr", "..\\victim.fzr", "C:\\victim.fzr", "/etc/passwd", "", "a/b.fzr"):
+        _poisoned_stage(root, "poisoned", capture=bad)
+        r = c.post("/api/stages/poisoned/rebuild")
+        assert r.status_code == 400, (bad, r.text)
+        assert "Setup tab" in r.json()["detail"], (bad, r.text)
+
+
+def test_build_refuses_a_recording_name_that_is_a_path(client):
+    c, root, cfg = client
+    for bad in ("../x.fzr", "..\\x.fzr", "C:\\x.fzr", "/x.fzr", ""):
+        assert c.post("/api/build", json={"capture": bad}).status_code == 400, bad
+    assert c.post("/api/build", json={"capture": "nope.fzr"}).status_code == 404
+
+
+def test_voice_say_refuses_a_pack_that_is_a_path(client):
+    c, root, cfg = client
+    for bad in ("../x", "a\\b", "..", "a/b"):
+        assert c.post("/api/voice/say", json={"text": "1 left", "pack": bad}).status_code == 400, bad
+
+
+def test_inside_is_the_last_word_on_paths(tmp_path):
+    from codriver.ui.server import _inside
+
+    base = tmp_path / "stages"
+    base.mkdir()
+    assert _inside(base, base / "a.json")
+    assert _inside(base, base)
+    assert not _inside(base, base / ".." / "a.json")
+    assert not _inside(base, tmp_path / "stages2" / "a.json")
+    assert not _inside(base, tmp_path / "stagesx")
+
+
+def test_strings_from_a_stage_file_are_one_line_and_capped():
+    from codriver.stage.schema import Stage, clean_text, from_dict, to_dict
+
+    assert clean_text("  a\n b\t c  ", 80) == "a b c"
+    assert clean_text("x" * 200, 80) == "x" * 80
+    assert clean_text(None) == ""
+    data = to_dict(Stage(name="ok"))
+    data["name"] = "evil\nstage" + "!" * 200
+    data["notes"] = [{"at_m": 1.0, "tokens": ["3\nright", "x" * 100], "kind": "corner\n", "direction": "right\n"}]
+    st = from_dict(data)
+    assert st.name == ("evil stage" + "!" * 200)[:80]
+    assert st.notes[0].tokens == ["3 right", "x" * 40]
+    assert st.notes[0].kind == "corner" and st.notes[0].direction == "right"
+
+
+def test_a_malformed_stage_file_is_a_bad_file_not_a_dead_server(client):
+    """Structural garbage in one stage file (a number where the token list
+    belongs) must not take /api/state down for every other stage."""
+    c, root, cfg = client
+    (root / "stages" / "broken.json").write_text(
+        '{"format": "codriver-stage", "version": 1, "name": "b", '
+        '"notes": [{"at_m": 1, "tokens": 5}], "line": [], "markings": []}',
+        encoding="utf-8",
+    )
+    (root / "stages" / "list.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert c.get("/api/state").status_code == 200
+    assert [s["name"] for s in c.get("/api/state").json()["stages"]] == []
+    r = c.get("/api/stages/broken")
+    assert r.status_code == 400 and "not a usable stage file" in r.json()["detail"]
+    assert c.post("/api/run", json={"stage": "broken"}).status_code == 400
+
