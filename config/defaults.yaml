@@ -278,10 +278,20 @@ overlay:
   # Dragging and resizing in edit mode saves these.
   x: 0.76
   y: 0.14
-  size: 0.26
+  size: 0.20
   aspect: 1.25
   # How solid the overlay is, 0.2 (faint) to 1.0 (fully opaque).
   opacity: 0.9
+  # The look follows the game's own HUD. Font: a file name from
+  # C:\Windows\Fonts (or a full path). The Horizon UI font is a custom
+  # Helvetica; Arial Bold is the stand-in every Windows has. Try
+  # "segoeuib.ttf" for Segoe UI Bold, "bahnschrift.ttf" for a DIN look.
+  font: "arialbd.ttf"
+  # Accent colour for the arrow and the distance, as #rrggbb: Horizon lime.
+  accent: "#c8ff00"
+  # A dark rounded tag behind the call text, like the game's button prompts.
+  # Off for text straight on the game picture.
+  panel: true
   # Where a stand-alone overlay ("codriver overlay") reads its notes: the
   # UI's event stream. The Overlay button on the Drive tab needs no address.
   feed_url: "ws://127.0.0.1:8777/ws"

@@ -133,8 +133,8 @@ def test_dragging_in_edit_mode_persists_the_placement(cfg_dir):
     ov = Overlay(cfg, window_factory=FakeWindow)
     ov.toggle_edit_mode()   # no data yet: edit mode shows the sample picture
     ov.render()
-    # 26 % of a 1080 screen, aspect 1.25: 280 x 350, placed at 76 % / 14 %
-    assert ov.window.frames[0].size == (350, 280)
+    # 20 % of a 1080 screen, aspect 1.25: 216 x 270, placed at 76 % / 14 %
+    assert ov.window.frames[0].size == (270, 216)
     assert (ov.window.x, ov.window.y) == (int(0.76 * 1920), int(0.14 * 1080))
 
     assert ov.window.edit_mode is True
@@ -262,4 +262,21 @@ def test_a_second_window_gets_its_own_messages_after_the_first_is_gone():
         assert hits == [1], "the second window's hotkey reaches the second window's handler"
     finally:
         second.destroy()
+
+
+def test_style_comes_from_config_and_survives_nonsense(cfg_dir):
+    from codriver.overlay.app import Overlay
+    from codriver.overlay.render import load_font, parse_rgb
+
+    (cfg_dir / "local.yaml").write_text(
+        "overlay:\n  accent: '#ff0000'\n  font: 'no-such-font.ttf'\n  panel: false\n", encoding="utf-8")
+    cfg = Config.load(cfg_dir)
+    st = Overlay(cfg, window_factory=FakeWindow).style()
+    assert st.accent_rgb == (255, 0, 0) and st.arrow_rgb == (255, 0, 0)
+    assert st.panel is False
+    assert st.font == "no-such-font.ttf"
+    assert load_font(20, st.font) is not None, "an unknown font falls back, never fails"
+    assert parse_rgb("200,255,0", (1, 1, 1)) == (200, 255, 0)
+    assert parse_rgb("purple", (1, 1, 1)) == (1, 1, 1)
+    assert parse_rgb("#zzzzzz", (1, 1, 1)) == (1, 1, 1)
 

@@ -122,7 +122,17 @@ class Overlay:
     # -- frames ------------------------------------------------------------------------
 
     def style(self) -> Style:
-        return Style(opacity=float(self.cfg.get("overlay.opacity")))
+        from .render import parse_rgb
+
+        base = Style()
+        accent = parse_rgb(self.cfg.get("overlay.accent", ""), base.accent_rgb)
+        return Style(
+            font=str(self.cfg.get("overlay.font", base.font) or base.font),
+            accent_rgb=accent,
+            arrow_rgb=accent,
+            panel=bool(self.cfg.get("overlay.panel", True)),
+            opacity=float(self.cfg.get("overlay.opacity")),
+        )
 
     def render(self, now: float | None = None) -> None:
         view = self.state.view(now)
