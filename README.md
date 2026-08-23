@@ -10,8 +10,6 @@ three"*. English or German.
 > [open an issue](https://github.com/W0nt3x/forza-codriver/issues) and say
 > what you did.
 
-[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/wontex)
-
 ## Why this exists
 
 I love the point-to-point races in Horizon, but they always felt like half a
@@ -266,7 +264,7 @@ is their trademark.*
 ## Support
 
 codriver is free and stays free. If it makes your rallies better:
-[ko-fi.com/wontex](https://ko-fi.com/wontex).
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/wontex)
 
 ## Credits
 
