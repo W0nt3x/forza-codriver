@@ -25,6 +25,7 @@ decision logic.
 
 from __future__ import annotations
 
+import bisect
 import logging
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
@@ -115,6 +116,8 @@ class Scheduler:
 
     def __post_init__(self) -> None:
         self.notes = sorted(self.notes, key=lambda n: n.at_m)
+        self._at_ms = [n.at_m for n in self.notes]
+        self._along_m = -1e9
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -124,6 +127,7 @@ class Scheduler:
         if self._queue:
             log.info("relocate: flushed %d queued note(s)", len(self._queue))
         self._queue.clear()
+        self._along_m = along_m
         self._next = 0
         while self._next < len(self.notes) and self.notes[self._next].at_m <= along_m:
             self._next += 1
@@ -144,6 +148,7 @@ class Scheduler:
 
     def tick(self, along_m: float, speed_mps: float, now: float) -> list[PlayEvent]:
         """Advance to ``along_m`` at ``speed_mps``; return phrases to start now."""
+        self._along_m = along_m
         # 1. Fire: move notes whose lead distance has been reached into the
         #    queue. The lead uses each note's own phrase duration, a long
         #    linked phrase fires earlier than a bare "3 left".
@@ -246,14 +251,14 @@ class Scheduler:
         return None
 
     def upcoming(self, count: int = 2) -> list[Note]:
-        """The next ``count`` calls in stage order: whatever is queued to be
-        spoken, then the notes not yet reached. What the overlay shows."""
-        out = [p.note for p in self._queue]
-        i = self._next
-        while len(out) < count and i < len(self.notes):
-            out.append(self.notes[i])
-            i += 1
-        return out[:count]
+        """The next ``count`` corners *ahead of the car*, by position: what
+        the overlay shows. Not the next call to be spoken: a call is spoken
+        well before its corner, and the driver still has that corner in front
+        of them until the car reaches it. The overlay keeps showing a corner
+        until the car passes its entry; the voice speaks it somewhere on the
+        way there."""
+        i = bisect.bisect_right(self._at_ms, self._along_m)
+        return self.notes[i:i + count]
 
     def speaking(self, now: float) -> bool:
         return now < self._speaking_until

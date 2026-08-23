@@ -156,6 +156,27 @@ def test_scheduler_upcoming_lists_the_next_calls_in_order():
     assert s.upcoming(2) == []
 
 
+def test_upcoming_is_the_corner_ahead_not_the_next_call_to_speak():
+    """Seen live: the voice called a corner and the overlay had already moved
+    on to the one after. A call is spoken at lead distance, well before its
+    corner; the overlay must keep that corner up until the car reaches it."""
+    from codriver.runtime.scheduler import Scheduler
+    from codriver.stage.notes import Note
+
+    notes = [Note(at_m=100.0, tokens=["3", "right"], severity=3, direction="right"),
+             Note(at_m=220.0, tokens=["2", "left"], severity=2, direction="left")]
+    s = Scheduler(notes=notes, duration_fn=lambda tokens: 1.0, reaction_buffer_s=1.8)
+    s.relocate(0.0)
+    # at 25 m/s the lead is about 70 m: by 40 m the 3 right is spoken
+    spoken = []
+    for along in (0.0, 20.0, 40.0, 60.0):
+        spoken += s.tick(along, 25.0, along / 25.0)
+    assert [e.note.at_m for e in spoken] == [100.0], "the call went out"
+    assert [n.at_m for n in s.upcoming(2)] == [100.0, 220.0], "but the corner is still ahead, so still shown"
+    s.tick(101.0, 25.0, 4.04)
+    assert [n.at_m for n in s.upcoming(2)] == [220.0], "past its entry: the next one"
+
+
 def test_status_event_carries_the_upcoming_notes():
     from codriver.runtime.run import note_brief
     from codriver.stage.notes import Note
