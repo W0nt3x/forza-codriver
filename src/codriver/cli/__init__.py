@@ -20,7 +20,7 @@ import sys
 
 from ..config import Config
 from ..record.capture import CaptureError
-from . import overlay, recordings, runtime, stages, telemetry, ui, voice
+from . import auto, overlay, recordings, runtime, stages, telemetry, ui, voice
 from ._common import setup_logging
 
 
@@ -64,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     runtime.register(sub)
     ui.register(sub)
     overlay.register(sub)
+    auto.register(sub)
     return parser
 
 

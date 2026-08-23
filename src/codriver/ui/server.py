@@ -798,6 +798,20 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
 
         return _start("session", job, "auto-recording races")
 
+    @app.post("/api/auto")
+    async def auto(body: dict | None = None) -> dict:
+        """Evening mode: recognise every race, call the ones with a stage, record all."""
+        from ..runtime.auto import load_stages, session_auto
+
+        stages = load_stages(stages_dir)
+
+        def job(emit, should_stop):
+            return session_auto(cfg, stages, recordings_dir, runs_dir,
+                                silent=bool((body or {}).get("silent", False)), hud=False,
+                                on_event=emit, should_stop=should_stop)
+
+        return _start("auto", job, f"auto: {len(stages)} stage(s) armed")
+
     @app.post("/api/run")
     async def run(body: dict) -> dict:
         from ..runtime.run import run_stage

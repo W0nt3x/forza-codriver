@@ -166,7 +166,8 @@ function setJobPill(job) {
   $("#btn-session").disabled = job.busy;
   $("#btn-session-stop").disabled = !(job.busy && job.kind === "session");
   $("#btn-run").disabled = job.busy;
-  $("#btn-run-stop").disabled = !(job.busy && job.kind === "run");
+  $("#btn-auto").disabled = job.busy;
+  $("#btn-run-stop").disabled = !(job.busy && (job.kind === "run" || job.kind === "auto"));
   $("#btn-scan").disabled = job.busy;
   $("#btn-voice-gen").disabled = job.busy;
 }
@@ -190,6 +191,7 @@ function handleEvent(e) {
   if (job === "capture") onCapture(e);
   if (job === "session") onSession(e);
   if (job === "run") onRun(e);
+  if (job === "auto") { onRun(e); onAuto(e); }
   if (job === "voice") onVoice(e);
 }
 
@@ -263,6 +265,21 @@ $("#btn-run").onclick = () => {
   api("/api/run", "POST", { stage: $("#drive-stage").value, record: $("#drive-record").checked }).catch((x) => alert(x.message));
 };
 $("#btn-run-stop").onclick = () => api("/api/stop", "POST");
+$("#btn-auto").onclick = () => { $("#calls").innerHTML = ""; api("/api/auto", "POST", {}).catch((x) => alert(x.message)); };
+function onAuto(e) {
+  if (e.kind === "auto_started") {
+    $("#hud-state").textContent = "auto";
+    $("#hud-next").textContent = "waiting for a race";
+    $("#hud-sub").textContent = `${e.stages.length} stage(s) armed. Drive; races are recognised on their own.`;
+  }
+  if (e.kind === "race_started") $("#hud-sub").textContent = `race #${e.race}: looking for its stage…`;
+  if (e.kind === "auto_matched") $("#hud-sub").textContent = `stage recognised: ${e.stage} (${e.distance_m} m from its start)`;
+  if (e.kind === "auto_unmatched") { $("#hud-next").textContent = "unknown race, recording it"; $("#hud-sub").textContent = "no stage starts here. Build it from the recording afterwards."; }
+  if (e.kind === "race_saved") { $("#hud-next").textContent = "waiting for the next race"; $("#hud-sub").textContent = e.stage ? `saved a run of ${e.stage} (${e.seconds} s), Learn material` : `saved ${e.path} (${e.seconds} s): build it on the Setup tab`; refreshState(); }
+  if (e.kind === "race_discarded") $("#hud-sub").textContent = `a ${e.seconds} s blip was not a race, dropped`;
+  if (e.kind === "auto_status" && !e.racing) $("#hud-state").textContent = "auto";
+  if (e.kind === "auto_done") { $("#hud-state").textContent = "done"; $("#hud-next").textContent = `auto stopped: ${e.races} race(s), ${e.matched} with a stage`; $("#hud-sub").textContent = ""; refreshState(); }
+}
 $("#btn-overlay").onclick = async () => {
   try { await api("/api/overlay", "POST", { on: !(STATE && STATE.overlay) }); }
   catch (x) { alert(x.message); }

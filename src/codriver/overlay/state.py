@@ -88,7 +88,7 @@ class OverlayState:
         """One runtime event. Events of other jobs (capture, scan) are ignored."""
         if not isinstance(event, dict):
             return
-        if event.get("job") not in (None, "run"):
+        if event.get("job") not in (None, "run", "auto"):
             return
         kind = event.get("kind")
         now = time.monotonic() if now is None else now
@@ -112,7 +112,8 @@ class OverlayState:
                 self.status_t = now
             elif kind == "suspended":
                 self.mode = "suspended"
-            elif kind in ("done", "finished", "error") or (kind == "started_job" and event.get("job") != "run"):
+            elif kind in ("done", "finished", "error", "auto_done") or (
+                    kind == "started_job" and event.get("job") not in ("run", "auto")):
                 self.mode = "idle"
                 self.upcoming = []
 

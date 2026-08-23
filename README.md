@@ -60,7 +60,9 @@ HUD.
 - *Build.* Press **Build**. The **Stages** tab shows the notes and a map
   coloured by how tight each corner is.
 - *Drive.* On the **Drive** tab pick the stage, press **Start co-driver**,
-  and race.
+  and race. Or press **Auto** once for the evening: every race is
+  recognised on its own, the ones you have a stage for get called, the rest
+  get recorded.
 
 **5. Give it a voice.** The first start uses placeholder beeps. On the
 **Voice** tab press **Generate** once, English or German; it needs the

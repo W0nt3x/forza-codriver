@@ -235,6 +235,18 @@ runtime:
     # Folder for recorded drives.
     dir: "recordings/runs"
 
+  auto:
+    # Evening mode (Auto on the Drive tab): how close to a stage's first
+    # metres the car has to be at race start for that stage to count, in
+    # metres. Stages that start at the same place are told apart later by
+    # where you drive; this only picks the candidate.
+    match_radius_m: 40.0
+    # How far into each stage the start area reaches, in metres.
+    match_head_m: 120.0
+    # How long after the race start to keep looking for a matching stage,
+    # in seconds, for starts that sit a little before the recorded line.
+    match_window_s: 15.0
+
   queue:
     # Calls closer together than this (seconds) are spoken as one phrase.
     link_window_s: 1.2
