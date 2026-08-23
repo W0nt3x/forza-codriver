@@ -215,7 +215,7 @@ Rough order, no dates.
 
 - **Real voices.** Recorded human co-drivers instead of text-to-speech, and
   recording your own pack from the Voice tab.
-- **UI** A Overlay showing direction arrows.
+- **UI.** A Overlay showing direction arrows.
 - **Better pace notes.** Sharper severity, fewer phantom corners on bumpy
   recon lines, smarter "into" and "and" linking, and the words the vocabulary
   already has but the generator does not use yet: *don't cut*, *narrows*,
