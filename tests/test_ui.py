@@ -805,3 +805,14 @@ def test_overlay_starts_in_process_on_the_job_stream(client):
     assert ov.events[-1]["along_m"] == 60.0, "unsubscribed after stop"
     jobs.kind = None
 
+
+def test_page_and_static_files_are_always_revalidated(client):
+    """After update.bat the browser must not run a cached app.js against the
+    new server: that is a button that does nothing."""
+    c, root, cfg = client
+    for path in ("/", "/static/app.js", "/static/style.css"):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers.get("cache-control") == "no-cache", path
+    assert "cache-control" not in {k.lower() for k in c.get("/api/state").headers} or         c.get("/api/state").headers.get("cache-control") != "no-cache"
+

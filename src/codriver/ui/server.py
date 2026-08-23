@@ -443,6 +443,29 @@ def _origin_matches_host(origin: str, host: str) -> bool:
     return bool(netloc) and netloc.lower() == host.strip().lower()
 
 
+class FreshStatic:
+    """Pure ASGI middleware: the page and its static files are always
+    revalidated (Cache-Control: no-cache, ETags still spare the bytes). After
+    an update the browser must not run last week's app.js against today's
+    server; that is how a new button does nothing."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http" or not (scope.get("path", "") == "/" or scope.get("path", "").startswith("/static/")):
+            return await self.app(scope, receive, send)
+
+        async def send_fresh(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message.get("headers", []) if k.lower() != b"cache-control"]
+                headers.append((b"cache-control", b"no-cache"))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_fresh)
+
+
 class BrowserGuard:
     """Pure ASGI middleware, see the block comment above."""
 
@@ -1181,6 +1204,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         # A broken or foreign file is the request's problem, not the server's.
         return JSONResponse({"detail": f"not a usable stage file: {exc}"}, status_code=400)
 
+    app.add_middleware(FreshStatic)
     app.add_middleware(BrowserGuard)
     return app
 
