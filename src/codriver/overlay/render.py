@@ -88,7 +88,7 @@ def _draw_edit_chrome(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, captio
     grip = 26 * ss
     draw.polygon([(w - 1, h - 1), (w - 1 - grip, h - 1), (w - 1, h - 1 - grip)], fill=(255, 255, 255, 230))
     font = load_font(14 * ss)
-    text = caption or "edit mode: drag to move, corner to resize, hotkey to lock"
+    text = caption or "edit: drag to move, corner resizes, hotkey locks"
     draw.text((10 * ss, 8 * ss), text, font=font, fill=(255, 255, 255, 255))
 
 

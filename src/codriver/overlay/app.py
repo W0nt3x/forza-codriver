@@ -76,7 +76,7 @@ class Overlay:
         )
 
     def render(self) -> None:
-        caption = f"edit mode: drag to move, corner to resize, {self.hotkey_text} to lock"
+        caption = f"edit: drag to move, corner resizes, {self.hotkey_text} locks"
         img = render_test_frame(self.window.width, self.window.height, self.style(),
                                 edit_mode=self.edit_mode, caption=caption)
         self.window.opacity = float(self.cfg.get("overlay.opacity"))
