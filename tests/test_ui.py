@@ -747,3 +747,61 @@ def test_share_author_is_one_line_in_the_file(client, monkeypatch):
     data = yaml.safe_load((root / "stages" / "share" / "coast-road-sprint.json").read_text(encoding="utf-8"))
     assert "\n" not in data["community"]["author"] and len(data["community"]["author"]) <= 60
 
+
+class _FakeOverlay:
+    """Stands in for the Win32 overlay: records events, pretends to run."""
+
+    instances = []
+
+    def __init__(self, cfg):
+        from codriver.overlay.state import OverlayState
+
+        self.cfg = cfg
+        self.state = OverlayState()
+        self.events = []
+        self._running = False
+        _FakeOverlay.instances.append(self)
+
+    def handle_event(self, event):
+        self.events.append(event)
+        self.state.handle_event(event)
+
+    def start_in_thread(self):
+        self._running = True
+
+    @property
+    def running(self):
+        return self._running
+
+    def stop(self, timeout_s=3.0):
+        self._running = False
+
+
+def test_overlay_starts_in_process_on_the_job_stream(client):
+    """The Overlay button: same events the web HUD gets, no socket, and the
+    late starter is brought up to date from the job history."""
+    c, root, cfg = client
+    c.app.state.overlay_factory = _FakeOverlay
+    _FakeOverlay.instances.clear()
+    assert c.get("/api/state").json()["overlay"] is False
+
+    jobs = c.app.state.jobs
+    jobs.kind = "run"
+    jobs.emit({"kind": "status", "state": "tracking", "along_m": 50.0, "speed_kmh": 80.0,
+               "upcoming": [{"text": "3 right", "tokens": ["3", "right"], "severity": 3,
+                             "direction": "right", "kind": "corner", "at_m": 170.0}]})
+    r = c.post("/api/overlay", json={"on": True})
+    assert r.status_code == 200 and r.json()["overlay"] is True
+    ov = _FakeOverlay.instances[-1]
+    assert ov.state.view().next.text == "3 right", "history replayed: the overlay knows the next call at once"
+    assert c.get("/api/state").json()["overlay"] is True
+
+    jobs.emit({"kind": "status", "state": "tracking", "along_m": 60.0, "speed_kmh": 80.0, "upcoming": []})
+    assert ov.events[-1]["along_m"] == 60.0, "live events reach the overlay"
+    assert c.post("/api/overlay", json={"on": True}).json()["overlay"] is True, "idempotent"
+
+    assert c.post("/api/overlay", json={"on": False}).json()["overlay"] is False
+    jobs.emit({"kind": "status", "state": "tracking", "along_m": 70.0, "speed_kmh": 80.0, "upcoming": []})
+    assert ov.events[-1]["along_m"] == 60.0, "unsubscribed after stop"
+    jobs.kind = None
+

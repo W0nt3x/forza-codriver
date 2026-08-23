@@ -245,5 +245,15 @@ class Scheduler:
             return self.notes[self._next]
         return None
 
+    def upcoming(self, count: int = 2) -> list[Note]:
+        """The next ``count`` calls in stage order: whatever is queued to be
+        spoken, then the notes not yet reached. What the overlay shows."""
+        out = [p.note for p in self._queue]
+        i = self._next
+        while len(out) < count and i < len(self.notes):
+            out.append(self.notes[i])
+            i += 1
+        return out[:count]
+
     def speaking(self, now: float) -> bool:
         return now < self._speaking_until

@@ -36,7 +36,7 @@ def test_bad_hotkeys_fail_with_a_message_not_a_default(bad):
 def test_shipped_hotkey_is_valid():
     cfg = Config.load(find_config_dir())
     parse_hotkey(cfg.get("overlay.hotkey"))
-    assert cfg.get("overlay.width") >= 40 and cfg.get("overlay.height") >= 40
+    assert 0.05 <= cfg.get("overlay.size") <= 1.0 and 0.4 <= cfg.get("overlay.aspect") <= 4.0
     assert 0.2 <= cfg.get("overlay.opacity") <= 1.0
 
 
@@ -50,9 +50,9 @@ def test_test_frame_is_transparent_where_nothing_is_drawn():
     assert img.mode == "RGBA" and img.size == (360, 300)
     for corner in ((0, 0), (359, 0), (0, 299), (359, 299)):
         assert img.getpixel(corner)[3] == 0, f"corner {corner} must be fully transparent"
-    # the arrow shaft sits left of centre, the text at the bottom: both opaque
-    assert img.getpixel((int(360 * 0.42), int(300 * 0.6)))[3] == 255
-    assert max(img.getpixel((x, int(300 * 0.90)))[3] for x in range(150, 210)) > 200
+    # the arrow shaft in the middle band and the text near the bottom: both opaque
+    assert max(img.getpixel((x, int(300 * 0.5)))[3] for x in range(360)) == 255
+    assert max(img.getpixel((x, int(300 * 0.79)))[3] for x in range(360)) == 255
 
 
 def test_edit_mode_makes_the_window_bounds_visible():
@@ -87,13 +87,22 @@ def test_tiny_sizes_do_not_crash_the_renderer():
 
 
 class FakeWindow:
+    SCREEN = (1920, 1080)
+
     def __init__(self, x, y, width, height, *, hotkey=None, on_hotkey=None, on_geometry=None, opacity=1.0):
         self.x, self.y, self.width, self.height = x, y, width, height
         self.hotkey, self.on_hotkey, self.on_geometry, self.opacity = hotkey, on_hotkey, on_geometry, opacity
         self.edit_mode = False
         self.frames = []
 
+    @classmethod
+    def screen_size(cls):
+        return cls.SCREEN
+
     def create(self):
+        pass
+
+    def request_close(self):
         pass
 
     def present(self, img):
@@ -122,10 +131,12 @@ def test_dragging_in_edit_mode_persists_the_placement(cfg_dir):
 
     cfg = Config.load(cfg_dir)
     ov = Overlay(cfg, window_factory=FakeWindow)
+    ov.toggle_edit_mode()   # no data yet: edit mode shows the sample picture
     ov.render()
-    assert len(ov.window.frames) == 1 and ov.window.frames[0].size == (cfg.get("overlay.width"), cfg.get("overlay.height"))
+    # 30 % of a 1080 screen, aspect 1.2: 324 x 388, placed at 4 % / 8 %
+    assert ov.window.frames[0].size == (388, 324)
+    assert (ov.window.x, ov.window.y) == (int(0.04 * 1920), int(0.08 * 1080))
 
-    ov.toggle_edit_mode()
     assert ov.window.edit_mode is True
     ov.window.on_geometry(500, 120, 420, 330, False)   # mid-drag: re-render only
     ov.idle()
@@ -134,8 +145,9 @@ def test_dragging_in_edit_mode_persists_the_placement(cfg_dir):
     ov.window.on_geometry(512, 128, 420, 330, True)    # drag ends
     ov.idle()
     saved = yaml.safe_load((cfg_dir / "local.yaml").read_text(encoding="utf-8"))
-    assert saved["overlay"] == {"x": 512, "y": 128, "width": 420, "height": 330}
-    assert cfg.get("overlay.x") == 512, "the config sees its own write"
+    assert saved["overlay"] == {"x": round(512 / 1920, 4), "y": round(128 / 1080, 4),
+                                "size": round(330 / 1080, 4), "aspect": round(420 / 330, 4)}
+    assert cfg.get("overlay.size") == round(330 / 1080, 4), "the config sees its own write"
     ov.toggle_edit_mode()
     assert ov.window.edit_mode is False
 
@@ -148,7 +160,7 @@ def test_config_changes_are_picked_up_while_running(cfg_dir):
     ov.idle()
     before = len(ov.window.frames)
     ov.idle()
-    assert len(ov.window.frames) == before, "no change, no redraw"
+    assert len(ov.window.frames) == before, "idle and unchanged: no redraw"
     (cfg_dir / "local.yaml").write_text("overlay:\n  opacity: 0.5\n", encoding="utf-8")
     cfg.poll(immediate=True)
     ov._dirty = True  # what idle() does after a successful poll
@@ -176,6 +188,8 @@ def test_the_window_is_layered_topmost_clickthrough_and_does_not_take_focus():
     from codriver.overlay.win32 import LayeredWindow
 
     foreground_before = win32.user32.GetForegroundWindow()
+    sw, sh = LayeredWindow.screen_size()
+    assert sw > 0 and sh > 0
     w = LayeredWindow(60, 60, 240, 180, hotkey=parse_hotkey("ctrl+shift+f12"), opacity=0.9)
     w.create()
     try:

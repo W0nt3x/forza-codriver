@@ -155,12 +155,13 @@ Running your own community repository? The relay is a Cloudflare Worker in
 
 ## Overlay on the PC screen
 
-`codriver overlay` (soon a button on the Drive tab) puts a transparent,
-click-through window over the game with the next corner as an arrow and
-text. Forza must run in **Borderless Windowed** (Settings → Video → Display
-Mode); in exclusive Fullscreen the game draws over everything, whatever the
-overlay does. `Ctrl+Shift+O` toggles edit mode to drag and resize it; the
-placement is remembered. Windows only.
+**Overlay** on the Drive tab (or `codriver overlay`) puts a transparent,
+click-through window over the game: the next corner as an arrow and crew
+shorthand, the call after it small below, the distance in the corner. Forza
+must run in **Borderless Windowed** (Settings → Video → Display Mode); in
+exclusive Fullscreen the game draws over everything, whatever the overlay
+does. `Ctrl+Shift+O` toggles edit mode to drag and resize it; the placement
+is remembered. Windows only.
 
 ## Your phone as the HUD
 

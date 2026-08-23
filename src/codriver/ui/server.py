@@ -19,6 +19,7 @@ import json
 import logging
 import re
 import socket
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -652,7 +653,45 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
                 p.parent.name for p in sorted(voices_dir.glob("*/manifest.yaml"))
             ],
             "voice_gaps": _voice_gaps(voices_dir),
+            "overlay": _overlay_running(),
         }
+
+    # -- the on-screen overlay, in this process, on the same event stream ----------
+    app.state.overlay = None
+    app.state.overlay_factory = None  # tests inject a fake; None means the real one
+    app.state.jobs = jobs
+
+    def _overlay_running() -> bool:
+        ov = app.state.overlay
+        return bool(ov is not None and ov.running)
+
+    @app.post("/api/overlay")
+    async def overlay_toggle(body: dict | None = None) -> dict:
+        want = bool((body or {}).get("on", True))
+        if want and not _overlay_running():
+            if sys.platform != "win32" and app.state.overlay_factory is None:
+                raise HTTPException(400, "the overlay is Windows only")
+            factory = app.state.overlay_factory
+            if factory is None:
+                from ..overlay.app import Overlay
+                factory = Overlay
+            try:
+                ov = factory(cfg)
+            except ValueError as exc:  # a bad overlay.hotkey
+                raise HTTPException(400, f"overlay: {exc}") from exc
+            jobs.subscribe(ov.handle_event)
+            ov.state.set_connected(True)
+            # a late starter sees where the run stands from the last status
+            for event in list(jobs.history)[-40:]:
+                ov.handle_event(event)
+            ov.start_in_thread()
+            app.state.overlay = ov
+        elif not want and app.state.overlay is not None:
+            ov = app.state.overlay
+            jobs.unsubscribe(ov.handle_event)
+            ov.stop()
+            app.state.overlay = None
+        return {"ok": True, "overlay": _overlay_running()}
 
     @app.get("/api/qr.svg")
     async def qr() -> Response:

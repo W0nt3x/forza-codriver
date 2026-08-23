@@ -166,6 +166,8 @@ def _bind() -> None:
     g.DeleteObject.argtypes = [wintypes.HGDIOBJ]
     k.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
     k.GetModuleHandleW.restype = wintypes.HMODULE
+    u.GetSystemMetrics.argtypes = [ctypes.c_int]
+    u.GetSystemMetrics.restype = ctypes.c_int
 
 
 if user32 is not None:
@@ -204,6 +206,11 @@ class LayeredWindow:
     toggle edit mode, pump messages; all on one thread."""
 
     GRIP_PX = 28  # bottom-right corner that resizes in edit mode
+
+    @staticmethod
+    def screen_size() -> tuple[int, int]:
+        """The primary monitor in physical pixels (the process is DPI aware)."""
+        return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
 
     def __init__(self, x: int, y: int, width: int, height: int, *,
                  hotkey: tuple[int, int] | None = None,

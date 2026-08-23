@@ -270,16 +270,20 @@ overlay:
   # window can be dragged by its body and resized at the bottom-right corner;
   # outside edit mode it is click-through and the game gets every click.
   hotkey: "ctrl+shift+o"
-  # Where the overlay sits: top-left corner in screen pixels, and its size.
-  # Dragging and resizing in edit mode saves these for you.
-  x: 80
-  y: 80
-  width: 360
-  height: 300
+  # Where the overlay sits and how big it is, as shares of the screen, so it
+  # looks the same on any monitor: x and y are the top-left corner (0.04 is
+  # 4 % in from the left, 8 % down from the top), size is the height (0.30 is
+  # 30 % of the screen height; text and arrow scale with it), aspect is
+  # width divided by height. Dragging and resizing in edit mode saves these.
+  x: 0.04
+  y: 0.08
+  size: 0.30
+  aspect: 1.2
   # How solid the overlay is, 0.2 (faint) to 1.0 (fully opaque).
   opacity: 0.9
-  # Size of the note text in pixels. The arrow scales with the window.
-  font_px: 64
+  # Where a stand-alone overlay ("codriver overlay") reads its notes: the
+  # UI's event stream. The Overlay button on the Drive tab needs no address.
+  feed_url: "ws://127.0.0.1:8777/ws"
 
 community:
   # The public GitHub repo that holds stages shared by other players

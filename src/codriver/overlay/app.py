@@ -1,57 +1,76 @@
-"""Config, window and renderer, wired. Stage 1: the static test arrow.
+"""Config, window, state and renderer, wired.
 
-Everything the user can change lives under ``overlay.*`` in the config and
-is hot-reloaded the way the rest of the project does it: the idle callback
-polls the config and re-renders when it changed. Position and size are
-written back to config/local.yaml when a drag or resize ends, so the overlay
-comes back where it was left.
+Everything the user can change lives under ``overlay.*`` and is hot-reloaded
+the way the rest of the project does it: the idle callback polls the config
+and re-renders when it changed. Placement is stored as shares of the screen
+(``x``, ``y``, ``size`` = height, ``aspect`` = width/height), so the overlay
+is the same size on a 1080p and a 4K monitor and comes back where it was
+left. A drag or resize in edit mode writes those back to config/local.yaml.
+
+The overlay consumes the runtime's event dicts through ``state.handle_event``;
+who delivers them (the UI process in-process, or a socket client) is the
+caller's business, see ``feed.py`` and the UI server.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+import threading
+import time
 from typing import Callable
 
 from ..config import Config
 from .hotkey import describe, parse_hotkey
-from .render import Style, render_test_frame
+from .render import Style, render_frame
+from .state import OverlayState
 
 log = logging.getLogger(__name__)
 
 WindowFactory = Callable[..., object]
+FRAME_MS = 66
+"""Redraw cadence while live: 15 frames a second is plenty for a distance
+that shrinks and an arrow that changes a few times a minute."""
 
 
 class Overlay:
     def __init__(self, cfg: Config, window_factory: WindowFactory | None = None) -> None:
         self.cfg = cfg
+        self.state = OverlayState()
         self.edit_mode = False
         self._dirty = True
+        self._last_view = None
         self._pending_geometry: tuple[int, int, int, int] | None = None
+        self._thread: threading.Thread | None = None
         mods, vk = parse_hotkey(str(cfg.get("overlay.hotkey")))
         self.hotkey_text = describe(mods, vk)
         if window_factory is None:
             from .win32 import LayeredWindow, make_dpi_aware
             make_dpi_aware()
             window_factory = LayeredWindow
+        self._window_cls = window_factory
+        self.screen_w, self.screen_h = window_factory.screen_size()
+        x, y, w, h = self._pixels_from_config()
         self.window = window_factory(
-            int(cfg.get("overlay.x")), int(cfg.get("overlay.y")),
-            int(cfg.get("overlay.width")), int(cfg.get("overlay.height")),
+            x, y, w, h,
             hotkey=(mods, vk), on_hotkey=self.toggle_edit_mode, on_geometry=self._on_geometry,
             opacity=float(cfg.get("overlay.opacity")),
         )
 
-    # -- what the window calls back ------------------------------------------
+    # -- geometry in shares of the screen -----------------------------------------
 
-    def toggle_edit_mode(self) -> None:
-        self.edit_mode = not self.edit_mode
-        self.window.set_edit_mode(self.edit_mode)
-        log.info("overlay edit mode %s (%s toggles)", "on" if self.edit_mode else "off", self.hotkey_text)
-        self._dirty = True
+    def _pixels_from_config(self) -> tuple[int, int, int, int]:
+        size = min(1.0, max(0.05, float(self.cfg.get("overlay.size"))))
+        aspect = min(4.0, max(0.4, float(self.cfg.get("overlay.aspect"))))
+        h = max(40, int(size * self.screen_h))
+        w = max(40, int(h * aspect))
+        x = int(float(self.cfg.get("overlay.x")) * self.screen_w)
+        y = int(float(self.cfg.get("overlay.y")) * self.screen_h)
+        return x, y, w, h
 
     def _on_geometry(self, x: int, y: int, w: int, h: int, final: bool) -> None:
         """During a drag or resize: re-render at the new size. When it ends:
-        remember the placement in local.yaml."""
+        remember the placement in local.yaml, as shares of the screen."""
         self.window.x, self.window.y = x, y
         self.window.width, self.window.height = max(40, w), max(40, h)
         self._dirty = True
@@ -63,38 +82,86 @@ class Overlay:
             return
         x, y, w, h = self._pending_geometry
         self._pending_geometry = None
-        for key, value in (("overlay.x", x), ("overlay.y", y), ("overlay.width", w), ("overlay.height", h)):
-            self.cfg.set_local(key, int(value))
+        values = {
+            "overlay.x": round(x / self.screen_w, 4),
+            "overlay.y": round(y / self.screen_h, 4),
+            "overlay.size": round(h / self.screen_h, 4),
+            "overlay.aspect": round(w / h, 4),
+        }
+        for key, value in values.items():
+            self.cfg.set_local(key, value)
         log.info("overlay placed at %d,%d size %dx%d (saved)", x, y, w, h)
 
-    # -- frames ------------------------------------------------------------------
+    # -- edit mode -------------------------------------------------------------------
+
+    def toggle_edit_mode(self) -> None:
+        self.edit_mode = not self.edit_mode
+        self.window.set_edit_mode(self.edit_mode)
+        log.info("overlay edit mode %s (%s toggles)", "on" if self.edit_mode else "off", self.hotkey_text)
+        self._dirty = True
+
+    # -- frames ------------------------------------------------------------------------
 
     def style(self) -> Style:
-        return Style(
-            font_px=int(self.cfg.get("overlay.font_px", 64)),
-            opacity=float(self.cfg.get("overlay.opacity")),
-        )
+        return Style(opacity=float(self.cfg.get("overlay.opacity")))
 
-    def render(self) -> None:
-        caption = f"edit: drag to move, corner resizes, {self.hotkey_text} locks"
-        img = render_test_frame(self.window.width, self.window.height, self.style(),
-                                edit_mode=self.edit_mode, caption=caption)
+    def render(self, now: float | None = None) -> None:
+        view = self.state.view(now)
+        if self.edit_mode and view.next is None:
+            # Nothing to show yet: a sample picture, so the user places a
+            # window that looks like the real thing.
+            from .render import render_test_frame
+            img = render_test_frame(self.window.width, self.window.height, self.style(), edit_mode=True,
+                                    caption=self._caption())
+        else:
+            img = render_frame(view, self.window.width, self.window.height, self.style(),
+                               edit_mode=self.edit_mode, caption=self._caption())
         self.window.opacity = float(self.cfg.get("overlay.opacity"))
         self.window.present(img)
+        self._last_view = view
         self._dirty = False
+
+    def _caption(self) -> str:
+        return f"edit: drag to move, corner resizes, {self.hotkey_text} locks"
 
     def idle(self) -> None:
         """Called by the window's message loop every few dozen ms."""
         self.persist_geometry()
         if self.cfg.poll():
             self._dirty = True
-        if self._dirty:
+        view = self.state.view()
+        # Live: redraw every tick, the distance moves. Otherwise only on change.
+        if self._dirty or view != self._last_view or view.mode == "tracking":
             self.render()
 
+    # -- running ---------------------------------------------------------------------------
+
     def run(self) -> None:
+        """Create the window and pump it on the calling thread until closed."""
         if sys.platform != "win32":
             raise RuntimeError("the overlay needs Windows")
         log.info("overlay: %s toggles edit mode; Forza must run in Borderless Windowed", self.hotkey_text)
         self.window.create()
         self.render()
-        self.window.run(on_idle=self.idle)
+        self.window.run(on_idle=self.idle, idle_ms=FRAME_MS)
+
+    def start_in_thread(self) -> threading.Thread:
+        """For hosts that have their own main loop (the UI server)."""
+        self._thread = threading.Thread(target=self.run, name="codriver-overlay", daemon=True)
+        self._thread.start()
+        return self._thread
+
+    @property
+    def running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+    def stop(self, timeout_s: float = 3.0) -> None:
+        self.window.request_close()
+        if self._thread is not None:
+            self._thread.join(timeout_s)
+        if self.running:
+            log.warning("overlay thread did not stop within %.0fs", timeout_s)
+
+    def handle_event(self, event: dict) -> None:
+        """The one entry point for runtime events, whatever carries them."""
+        self.state.handle_event(event, time.monotonic())

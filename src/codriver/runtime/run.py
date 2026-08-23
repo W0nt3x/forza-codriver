@@ -106,6 +106,18 @@ def _apply_config(cfg: Config, locator: Locator, scheduler: Scheduler, bank) -> 
     bank.crossfade_s = cfg.get("audio.crossfade_ms") / 1000.0
 
 
+def note_brief(note) -> dict[str, Any]:
+    """A note as the event stream carries it: enough to draw, nothing more."""
+    return {
+        "text": note.text,
+        "tokens": list(note.tokens),
+        "severity": note.severity,
+        "direction": note.direction,
+        "kind": note.kind,
+        "at_m": note.at_m,
+    }
+
+
 def run_stage(
     stage: Stage,
     cfg: Config,
@@ -283,6 +295,7 @@ def run_stage(
                         "off_m": fix.off_line_m,
                         "next": nxt.text if nxt else None,
                         "next_at_m": nxt.at_m if nxt else None,
+                        "upcoming": [note_brief(n) for n in scheduler.upcoming(2)],
                         "spoken": scheduler.spoken,
                         "dropped": scheduler.dropped,
                     })

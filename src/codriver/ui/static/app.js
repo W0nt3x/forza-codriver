@@ -55,6 +55,8 @@ async function refreshState() {
 
   const stageOpts = STATE.stages.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${fmtKm(s.length_m)} km · ${s.notes} notes</option>`).join("");
   $("#drive-stage").innerHTML = stageOpts || "<option disabled>build a stage first</option>";
+  $("#btn-overlay").textContent = STATE.overlay ? "Overlay: on" : "Overlay: off";
+  $("#btn-overlay").classList.toggle("primary", !!STATE.overlay);
 
   $("#stage-list").innerHTML = STATE.stages.map((s) =>
     `<li data-name="${esc(s.name)}" class="${currentStage === s.name ? "sel" : ""}">
@@ -244,6 +246,11 @@ $("#btn-run").onclick = () => {
   api("/api/run", "POST", { stage: $("#drive-stage").value, record: $("#drive-record").checked }).catch((x) => alert(x.message));
 };
 $("#btn-run-stop").onclick = () => api("/api/stop", "POST");
+$("#btn-overlay").onclick = async () => {
+  try { await api("/api/overlay", "POST", { on: !(STATE && STATE.overlay) }); }
+  catch (x) { alert(x.message); }
+  refreshState();
+};
 function onRun(e) {
   if (e.kind === "waiting") {
     $("#hud-state").textContent = "waiting";
