@@ -326,9 +326,9 @@ class LayeredWindow:
         user32.SetWindowPos(self.hwnd, None, 0, 0, 0, 0,
                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
 
-    def geometry(self) -> tuple[int, int, int, int]:
+    def geometry(self, hwnd: int | None = None) -> tuple[int, int, int, int]:
         rect = wintypes.RECT()
-        user32.GetWindowRect(self.hwnd, ctypes.byref(rect))
+        user32.GetWindowRect(hwnd or self.hwnd, ctypes.byref(rect))
         return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
 
     def move(self, x: int, y: int) -> None:
@@ -368,19 +368,18 @@ class LayeredWindow:
             if msg == WM_NCHITTEST and self.edit_mode:
                 x = ctypes.c_short(lparam & 0xFFFF).value
                 y = ctypes.c_short((lparam >> 16) & 0xFFFF).value
-                left, top, w, h = self.geometry()
+                left, top, w, h = self.geometry(hwnd)
                 if x >= left + w - self.GRIP_PX and y >= top + h - self.GRIP_PX:
                     return HTBOTTOMRIGHT
                 return HTCAPTION
-            if msg == WM_SIZE:
-                if self.on_geometry:
-                    l, t, w, h = self.geometry()
-                    self.on_geometry(l, t, w, h, False)
-                return 0
-            if msg == WM_EXITSIZEMOVE:
-                if self.on_geometry:
-                    l, t, w, h = self.geometry()
-                    self.on_geometry(l, t, w, h, True)
+            if msg in (WM_SIZE, WM_EXITSIZEMOVE):
+                # WM_SIZE already arrives inside CreateWindowExW, before
+                # self.hwnd is set: use the hwnd Windows hands us, and never
+                # report a zero rectangle (that once shrank the window to 40 px).
+                if self.on_geometry and self.hwnd is not None:
+                    l, t, w, h = self.geometry(hwnd)
+                    if w > 0 and h > 0:
+                        self.on_geometry(l, t, w, h, msg == WM_EXITSIZEMOVE)
                 return 0
             if msg == WM_CLOSE:
                 user32.DestroyWindow(hwnd)

@@ -190,9 +190,13 @@ def test_the_window_is_layered_topmost_clickthrough_and_does_not_take_focus():
     foreground_before = win32.user32.GetForegroundWindow()
     sw, sh = LayeredWindow.screen_size()
     assert sw > 0 and sh > 0
-    w = LayeredWindow(60, 60, 240, 180, hotkey=parse_hotkey("ctrl+shift+f12"), opacity=0.9)
+    reported = []
+    w = LayeredWindow(60, 60, 240, 180, hotkey=parse_hotkey("ctrl+shift+f12"), opacity=0.9,
+                      on_geometry=lambda *g: reported.append(g))
     w.create()
     try:
+        assert all(g[2] > 0 and g[3] > 0 for g in reported),             f"creation must never report a zero-size rectangle: {reported}"
+        assert w.geometry() == (60, 60, 240, 180), "the requested size survives creation"
         style = win32.get_exstyle(w.hwnd)
         for flag, name in ((win32.WS_EX_LAYERED, "LAYERED"), (win32.WS_EX_TOPMOST, "TOPMOST"),
                            (win32.WS_EX_TRANSPARENT, "TRANSPARENT"), (win32.WS_EX_TOOLWINDOW, "TOOLWINDOW"),
