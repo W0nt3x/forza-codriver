@@ -133,9 +133,9 @@ def test_dragging_in_edit_mode_persists_the_placement(cfg_dir):
     ov = Overlay(cfg, window_factory=FakeWindow)
     ov.toggle_edit_mode()   # no data yet: edit mode shows the sample picture
     ov.render()
-    # 20 % of a 1080 screen, aspect 1.25: 216 x 270, placed at 76 % / 14 %
-    assert ov.window.frames[0].size == (270, 216)
-    assert (ov.window.x, ov.window.y) == (int(0.76 * 1920), int(0.14 * 1080))
+    # 19 % of a 1080 screen, aspect 1.1: 205 x 225, placed at 70 % / 6 %
+    assert ov.window.frames[0].size == (225, 205)
+    assert (ov.window.x, ov.window.y) == (int(0.70 * 1920), int(0.06 * 1080))
 
     assert ov.window.edit_mode is True
     ov.window.on_geometry(500, 120, 420, 330, False)   # mid-drag: re-render only
@@ -234,7 +234,7 @@ def test_legacy_pixel_placement_is_converted_and_kept_on_screen(cfg_dir):
     assert (ov.window.x, ov.window.y) == (int(cfg.get("overlay.x") * 1920), int(cfg.get("overlay.y") * 1080))
     saved = yaml.safe_load((cfg_dir / "local.yaml").read_text(encoding="utf-8")) or {}
     assert "overlay" not in saved, "the old placement is dropped entirely, defaults apply"
-    assert cfg.get("overlay.x") == 0.76, "the shipped default: top right"
+    assert cfg.get("overlay.x") == 0.70, "the shipped default: top right"
 
 
 @pytest.mark.skipif(not _has_windows_desktop(), reason="needs a Windows desktop")
@@ -272,7 +272,7 @@ def test_style_comes_from_config_and_survives_nonsense(cfg_dir):
         "overlay:\n  accent: '#ff0000'\n  font: 'no-such-font.ttf'\n  panel: false\n", encoding="utf-8")
     cfg = Config.load(cfg_dir)
     st = Overlay(cfg, window_factory=FakeWindow).style()
-    assert st.accent_rgb == (255, 0, 0) and st.arrow_rgb == (255, 0, 0)
+    assert st.accent_rgb == (255, 0, 0)
     assert st.panel is False
     assert st.font == "no-such-font.ttf"
     assert load_font(20, st.font) is not None, "an unknown font falls back, never fails"

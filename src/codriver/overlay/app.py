@@ -125,13 +125,28 @@ class Overlay:
         from .render import parse_rgb
 
         base = Style()
-        accent = parse_rgb(self.cfg.get("overlay.accent", ""), base.accent_rgb)
+        cfg = self.cfg
+        palette = cfg.section("display.colours") if "display" in cfg.data else {}
+        severity = tuple(parse_rgb(palette.get(f"class_{n}"), base.severity_rgb[n - 1]) for n in range(1, 7))
+        bend = cfg.get("overlay.bend_degrees", list(base.bend_degrees))
+        try:
+            bend = tuple(float(b) for b in bend)[:6]
+            if len(bend) < 6:
+                bend = base.bend_degrees
+        except (TypeError, ValueError):
+            bend = base.bend_degrees
         return Style(
-            font=str(self.cfg.get("overlay.font", base.font) or base.font),
-            accent_rgb=accent,
-            arrow_rgb=accent,
-            panel=bool(self.cfg.get("overlay.panel", True)),
-            opacity=float(self.cfg.get("overlay.opacity")),
+            font=str(cfg.get("overlay.font", base.font) or base.font),
+            accent_rgb=parse_rgb(cfg.get("overlay.accent", ""), base.accent_rgb),
+            panel=bool(cfg.get("overlay.panel", True)),
+            opacity=float(cfg.get("overlay.opacity")),
+            severity_rgb=severity,
+            hazard_rgb=parse_rgb(palette.get("hazard"), base.hazard_rgb),
+            water_rgb=parse_rgb(palette.get("water"), base.water_rgb),
+            bend_degrees=bend,
+            bar_full_m=float(cfg.get("overlay.bar_full_m", base.bar_full_m) or base.bar_full_m),
+            text_scale=float(cfg.get("overlay.text_scale", 1.0) or 1.0),
+            arrow_scale=float(cfg.get("overlay.arrow_scale", 1.0) or 1.0),
         )
 
     def render(self, now: float | None = None) -> None:

@@ -56,6 +56,7 @@ def test_state_reports_the_lan_url_and_empty_project(client):
     assert s["telemetry_port"] == cfg.get("telemetry.port")
     assert s["stages"] == [] and s["recordings"] == [] and s["voices"] == []
     assert s["job"]["busy"] is False
+    assert s["colours"]["1"] == cfg.get("display.colours.class_1") and s["colours"]["S"] == cfg.get("display.colours.straight")
 
 
 def test_index_and_qr_are_served(client):

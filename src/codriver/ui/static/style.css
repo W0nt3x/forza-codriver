@@ -52,7 +52,8 @@ footer a { color: var(--accent); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
 .legend { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .sw { display: inline-block; width: 14px; height: 8px; border-radius: 2px; margin: 0 3px 0 10px; vertical-align: middle; }
-.c1 { background: #ff3b30 } .c2 { background: #ff7a1a } .c3 { background: #ffcc00 } .c4 { background: #4cd964 } .c5 { background: #2fb3ff } .c6 { background: #8e6bff } .cs { background: #a0a0a8 }
+/* the swatch colours are set from the server's palette (display.colours) */
+.c1 { background: var(--c1, #888) } .c2 { background: var(--c2, #888) } .c3 { background: var(--c3, #888) } .c4 { background: var(--c4, #888) } .c5 { background: var(--c5, #888) } .c6 { background: var(--c6, #888) } .cs { background: var(--cs, #a0a0a8) }
 table.notes { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
 table.notes td { padding: 4px 8px; border-top: 1px solid var(--line); }
 /* drive HUD -- big, readable on a phone next to the wheel */

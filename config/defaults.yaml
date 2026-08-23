@@ -258,6 +258,25 @@ audio:
   placeholder_clip_s: 0.35
 
 # ---------------------------------------------------------------------------
+# Colours for the corner classes, one place for the map on the Stages tab and
+# the overlay arrow alike. 1 is the tightest corner, 6 barely a bend. #rrggbb.
+# ---------------------------------------------------------------------------
+display:
+  colours:
+    class_1: "#ff3b30"
+    class_2: "#ff7a1a"
+    class_3: "#ffcc00"
+    class_4: "#4cd964"
+    class_5: "#2fb3ff"
+    class_6: "#8e6bff"
+    # Straight road on the map.
+    straight: "#a0a0a8"
+    # Jumps, crests, dips: the hazard colour on the map and in the overlay.
+    hazard: "#ffd60a"
+    # Water crossings.
+    water: "#2fb3ff"
+
+# ---------------------------------------------------------------------------
 # On-screen overlay: a transparent, click-through window on top of the game
 # that shows the next corner as an arrow and text. Forza must run in
 # Borderless Windowed (Settings, Video, Display Mode). In exclusive Fullscreen
@@ -276,12 +295,22 @@ overlay:
   # the game's own header), size is the height (0.26 is 26 % of the screen
   # height; text and arrow scale with it), aspect is width divided by height.
   # Dragging and resizing in edit mode saves these.
-  x: 0.76
-  y: 0.14
-  size: 0.20
-  aspect: 1.25
+  x: 0.70
+  y: 0.06
+  size: 0.19
+  aspect: 1.1
   # How solid the overlay is, 0.2 (faint) to 1.0 (fully opaque).
-  opacity: 0.9
+  opacity: 1.0
+  # Text size and arrow size, as factors. 1.2 is a fifth larger.
+  text_scale: 1.0
+  arrow_scale: 1.0
+  # How far the arrow bends for each corner class 1 to 6, in degrees: 170 is
+  # a hairpin, 30 a kink. Colours come from display.colours below, the same
+  # ones the map on the Stages tab uses.
+  bend_degrees: [170, 135, 105, 80, 55, 30]
+  # The distance bar under the arrow is full at this many metres and shrinks
+  # to nothing at the corner.
+  bar_full_m: 200
   # The look follows the game's own HUD. Font: a file name from
   # C:\Windows\Fonts (or a full path). The Horizon UI font is a custom
   # Helvetica; Arial Bold is the stand-in every Windows has. Try

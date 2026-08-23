@@ -35,12 +35,36 @@ class Style:
 
     font: str = "arialbd.ttf"
     accent_rgb: tuple[int, int, int] = (200, 255, 0)
-    arrow_rgb: tuple[int, int, int] = (200, 255, 0)
     text_rgb: tuple[int, int, int] = (255, 255, 255)
     outline_rgb: tuple[int, int, int] = (0, 0, 0)
     muted_rgb: tuple[int, int, int] = (225, 225, 225)
     panel: bool = True
-    opacity: float = 0.9  # applied by the window as the constant alpha; kept here for tests
+    opacity: float = 1.0  # applied by the window as the constant alpha; kept here for tests
+    # the shared severity palette (display.colours): class -> rgb
+    severity_rgb: tuple[tuple[int, int, int], ...] = (
+        (255, 59, 48), (255, 122, 26), (255, 204, 0), (76, 217, 100), (47, 179, 255), (142, 107, 255))
+    hazard_rgb: tuple[int, int, int] = (255, 214, 10)
+    water_rgb: tuple[int, int, int] = (47, 179, 255)
+    bend_degrees: tuple[float, ...] = (170, 135, 105, 80, 55, 30)
+    bar_full_m: float = 200.0
+    text_scale: float = 1.0
+    arrow_scale: float = 1.0
+
+    def colour_for(self, note: "NoteBrief | None") -> tuple[int, int, int]:
+        """The colour a call is drawn in: its class from the shared palette,
+        hazards in the hazard colour, water in the water colour."""
+        if note is None:
+            return self.accent_rgb
+        if note.kind == "water":
+            return self.water_rgb
+        if note.severity is None or not 1 <= int(note.severity) <= len(self.severity_rgb):
+            return self.hazard_rgb if note.kind != "corner" else self.accent_rgb
+        return self.severity_rgb[int(note.severity) - 1]
+
+    def bend_for(self, note: "NoteBrief | None") -> float:
+        if note is None or note.severity is None or not 1 <= int(note.severity) <= len(self.bend_degrees):
+            return 60.0
+        return float(self.bend_degrees[int(note.severity) - 1])
 
 
 _FONT_FALLBACKS = ("arialbd.ttf", "segoeuib.ttf", "seguisb.ttf", "DejaVuSans-Bold.ttf")
@@ -149,36 +173,46 @@ def render_frame(view: View, width: int, height: int, style: Style,
 
     nxt = view.next
     f = style.font
+    ts = max(0.5, min(2.0, style.text_scale))
     usable = w * 0.90  # text never touches the edges of the tag
+    colour = style.colour_for(nxt)
     # the dark tag behind the call and the preview, like the game's prompts
     if style.panel:
         draw.rounded_rectangle([w * 0.03, h * 0.70, w * 0.97, h * 0.985], radius=h * 0.035,
-                               fill=(10, 12, 16, 150))
+                               fill=(10, 12, 16, 205))
 
-    # 1. the arrow (or the hazard word) in the upper two thirds
+    # 1. the arrow (or the hazard word) in the upper two thirds, in the class colour
     if _is_hazard(nxt):
         word = shorthand(nxt.tokens[:1])
-        _text(draw, (w * 0.5, h * 0.38), word, fit_font(word, int(h * 0.20), usable, preferred=f),
-              style.arrow_rgb, style.outline_rgb, ss)
+        _text(draw, (w * 0.5, h * 0.36), word, fit_font(word, int(h * 0.20 * ts), usable, preferred=f),
+              colour, style.outline_rgb, ss)
     else:
         direction = nxt.direction or _first_direction(nxt.tokens) or "right"
-        _arrow(draw, w, h, ss, style, direction)
+        _arrow(draw, w, h, ss, style, direction, style.bend_for(nxt), colour)
 
-    # 2. the call in shorthand, big, shrunk to fit if it is a long one
+    # 2. the distance bar: full at bar_full_m, gone at the corner, in the class colour
+    if view.distance_m is not None:
+        frac = max(0.0, min(1.0, view.distance_m / max(1.0, style.bar_full_m)))
+        x0, x1, y0, y1 = w * 0.06, w * 0.94, h * 0.715, h * 0.735
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=(y1 - y0) / 2, fill=(255, 255, 255, 45))
+        if frac > 0.01:
+            draw.rounded_rectangle([x0, y0, x0 + (x1 - x0) * frac, y1], radius=(y1 - y0) / 2, fill=colour + (255,))
+
+    # 3. the call in shorthand, big, shrunk to fit if it is a long one
     call = shorthand(nxt.tokens)
-    _text(draw, (w * 0.5, h * 0.80), call, fit_font(call, int(h * 0.14), usable, preferred=f),
+    _text(draw, (w * 0.5, h * 0.815), call, fit_font(call, int(h * 0.13 * ts), usable, preferred=f),
           style.text_rgb, style.outline_rgb, ss)
 
-    # 3. the call after next, small, as a preview
+    # 4. the call after next, small, as a preview, in its own class colour
     if view.after is not None:
         then = "then " + shorthand(view.after.tokens)
-        _text(draw, (w * 0.5, h * 0.93), then, fit_font(then, int(h * 0.07), usable, preferred=f),
+        _text(draw, (w * 0.5, h * 0.935), then, fit_font(then, int(h * 0.07 * ts), usable, preferred=f),
               style.muted_rgb, style.outline_rgb, ss)
 
-    # 4. the distance, top right, in the accent, secondary
+    # 5. the distance, top right, secondary
     if view.distance_m is not None:
         dist = f"{int(round(view.distance_m / 5.0) * 5)} m"
-        _text(draw, (w * 0.96, h * 0.09), dist, fit_font(dist, int(h * 0.095), w * 0.4, preferred=f),
+        _text(draw, (w * 0.96, h * 0.09), dist, fit_font(dist, int(h * 0.095 * ts), w * 0.4, preferred=f),
               style.accent_rgb, style.outline_rgb, ss, anchor="rm")
 
     live = view.mode == "tracking"
@@ -200,22 +234,48 @@ def render_test_frame(width: int, height: int, style: Style, edit_mode: bool = F
 
 # -- pieces ---------------------------------------------------------------------------
 
-def _arrow(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, style: Style, direction: str) -> None:
-    """A flat shaft rising from the lower middle, bending to the side, with a
-    head: a soft shadow and a hairline edge, not a heavy outline, like the
-    game's own flat graphics. Mirrored for left. Stage 3 bends it by severity."""
-    shaft = max(8 * ss, int(h * 0.08))
-    sign = 1 if direction == "right" else -1
-    cx = w * 0.5 - sign * w * 0.08
-    pts = [
-        (cx, h * 0.64),
-        (cx, h * 0.36),
-        (cx + sign * w * 0.04, h * 0.27),
-        (cx + sign * w * 0.14, h * 0.22),
-        (cx + sign * w * 0.27, h * 0.22),
-    ]
-    hx, hy = pts[-1]
-    head = [(hx, hy - shaft * 1.35), (hx + sign * shaft * 1.8, hy), (hx, hy + shaft * 1.35)]
+def arrow_geometry(w: int, h: int, style: Style, direction: str, bend_deg: float
+                   ) -> tuple[list[tuple[float, float]], list[tuple[float, float]], float]:
+    """The arrow as points: a straight run up, an arc turning ``bend_deg``
+    to the side, and a head along the end tangent. Built in a local frame,
+    then scaled and centred into the upper part of the box, so a hairpin and
+    a kink fill the same space. Returns (shaft points, head triangle, shaft
+    width) in image pixels."""
+    import math
+
+    sign = 1.0 if direction == "right" else -1.0
+    theta = math.radians(max(5.0, min(180.0, bend_deg)))
+    run, radius = 1.0, 1.4           # straight length and arc radius, arbitrary units
+    pts = [(0.0, 0.0), (0.0, -run)]
+    steps = max(6, int(theta / math.radians(8)))
+    for i in range(1, steps + 1):
+        a = math.pi - theta * i / steps
+        pts.append((radius + radius * math.cos(a), -run - radius * math.sin(a)))
+    a_end = math.pi - theta
+    ux, uy = math.sin(a_end), math.cos(a_end)      # end tangent (unit)
+    px, py = -uy, ux                                 # its normal
+    ex, ey = pts[-1]
+    head_len, head_half = 0.75, 0.5
+    head = [(ex + ux * head_len, ey + uy * head_len), (ex + px * head_half, ey + py * head_half),
+            (ex - px * head_half, ey - py * head_half)]
+    # mirror, then fit into the box: width 80 %, height from 10 % to 64 %
+    allp = [(sign * x, y) for x, y in pts + head]
+    xs, ys = [p[0] for p in allp], [p[1] for p in allp]
+    span_x, span_y = max(xs) - min(xs) + 0.8, max(ys) - min(ys) + 0.8   # +shaft margin
+    scale = min(w * 0.80 / span_x, h * 0.54 / span_y) * max(0.5, min(1.6, style.arrow_scale))
+    cx, cy = w * 0.5, h * 0.37
+    mx, my = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+    fit = lambda p: (cx + (sign * p[0] - mx) * scale, cy + (p[1] - my) * scale)
+    shaft_px = 0.34 * scale
+    return [fit(p) for p in pts], [fit(p) for p in head], shaft_px
+
+
+def _arrow(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, style: Style, direction: str,
+           bend_deg: float, colour: tuple[int, int, int]) -> None:
+    """Flat, with a soft shadow and a hairline edge, like the game's own
+    graphics; the bend says how tight, the colour says the class."""
+    pts, head, shaft = arrow_geometry(w, h, style, direction, bend_deg)
+    shaft = max(6 * ss, int(shaft))
     off = 3 * ss
     shadow = (0, 0, 0, 110)
     draw.line([(x + off, y + off) for x, y in pts], fill=shadow, width=shaft + 2 * ss, joint="curve")
@@ -223,9 +283,13 @@ def _arrow(draw: ImageDraw.ImageDraw, w: int, h: int, ss: int, style: Style, dir
     edge = style.outline_rgb + (200,)
     draw.line(pts, fill=edge, width=shaft + 2 * ss, joint="curve")
     draw.polygon(head, fill=edge)
-    draw.line(pts, fill=style.arrow_rgb + (255,), width=shaft, joint="curve")
-    inner = [(hx + sign * ss, hy - shaft * 1.1), (hx + sign * shaft * 1.55, hy), (hx + sign * ss, hy + shaft * 1.1)]
-    draw.polygon(inner, fill=style.arrow_rgb + (255,))
+    draw.line(pts, fill=colour + (255,), width=shaft, joint="curve")
+    # the head's inner triangle, inset by the edge width
+    (tx, ty), (bx1, by1), (bx2, by2) = head
+    cxh, cyh = (tx + bx1 + bx2) / 3, (ty + by1 + by2) / 3
+    k = 0.84
+    inner = [(cxh + (x - cxh) * k, cyh + (y - cyh) * k) for x, y in head]
+    draw.polygon(inner, fill=colour + (255,))
 
 
 def _first_direction(tokens: tuple[str, ...]) -> str | None:

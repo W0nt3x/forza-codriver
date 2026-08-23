@@ -521,6 +521,19 @@ def _http_post_json(
         raise RuntimeError(f"{exc.code}: {detail[:300]}") from None
 
 
+def display_colours(cfg: Config) -> dict[str, str]:
+    """The severity palette as the UI and the overlay consume it:
+    {"1": "#..", ..., "6": "#..", "S": "#..", "hazard": "#..", "water": "#.."}."""
+    section = cfg.section("display.colours") if "display" in cfg.data else {}
+    out: dict[str, str] = {}
+    for n in range(1, 7):
+        out[str(n)] = str(section.get(f"class_{n}", "#888888"))
+    out["S"] = str(section.get("straight", "#a0a0a8"))
+    out["hazard"] = str(section.get("hazard", "#ffd60a"))
+    out["water"] = str(section.get("water", "#2fb3ff"))
+    return out
+
+
 def _stage_detail_dict(st) -> dict:
     """What the Stages tab draws: line, markings, notes. Shared by a stage on
     disk and a community preview, so both look the same on the map."""
@@ -650,6 +663,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             "lan_url": f"http://{ip}:{port}",
             "telemetry_port": cfg.get("telemetry.port"),
             "voice_pack": cfg.get("audio.voice_pack"),
+            "colours": display_colours(cfg),
             "job": jobs.status(),
             "recent": list(jobs.history)[-40:],
             "stages": [s for s in (_stage_summary(p) for p in sorted(stages_dir.glob("*.json"))) if s],

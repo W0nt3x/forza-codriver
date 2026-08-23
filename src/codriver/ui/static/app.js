@@ -46,6 +46,7 @@ try {
 // ---------------------------------------------------------------- state
 async function refreshState() {
   STATE = await api("/api/state");
+  applyColours(STATE.colours);
   $("#lan-url").textContent = STATE.lan_url;
   $("#port-hint").textContent = STATE.telemetry_port;
   setJobPill(STATE.job);
@@ -321,7 +322,15 @@ $("#btn-share").onclick = async () => {
 };
 $("#btn-delete").onclick = async () => { if (!confirm(`delete stage ${currentStage}?`)) return; await api(`/api/stages/${currentStage}`, "DELETE"); currentStage = null; $("#stage-actions").hidden = true; $("#stage-title").textContent = "no stage selected"; $("#stage-notes").innerHTML = ""; MAP_STAGE = null; drawMap(); refreshState(); };
 
-const CLASS_COLOUR = { 1: "#ff3b30", 2: "#ff7a1a", 3: "#ffcc00", 4: "#4cd964", 5: "#2fb3ff", 6: "#8e6bff", S: "#a0a0a8" };
+// The severity palette comes from the server (display.colours in the
+// config), the same one the overlay arrow uses. Nothing is hard-coded here.
+let COLOURS = {};
+function applyColours(colours) {
+  COLOURS = colours || {};
+  const root = document.documentElement;
+  for (const k of ["1", "2", "3", "4", "5", "6"]) root.style.setProperty(`--c${k}`, COLOURS[k] || "#888");
+  root.style.setProperty("--cs", COLOURS.S || "#a0a0a8");
+}
 // Stage map. Wheel (or pinch) zooms around the cursor, drag pans,
 // double-click or the Fit button shows the whole stage again.
 let MAP_STAGE = null;
@@ -356,7 +365,7 @@ function drawMap(st) {
   let colour = null;
   for (let i = 1; i < st.line.length; i++) {
     const label = st.markings[i] || "S";
-    const next = CLASS_COLOUR[label === "S" ? "S" : label.slice(1)] || "#888";
+    const next = COLOURS[label === "S" ? "S" : label.slice(1)] || "#888";
     if (next !== colour) {
       if (colour) ctx.stroke();
       colour = next; ctx.strokeStyle = colour;
@@ -373,7 +382,7 @@ function drawMap(st) {
     const p = st.line[Math.min(n.index, st.line.length - 1)];
     const x = X(p[0]), y = Y(p[1]);
     if (x < -200 || y < -50 || x > W + 50 || y > H + 50) return;  // off screen while zoomed
-    ctx.fillStyle = n.kind === "corner" ? "#ffffff" : n.kind === "water" ? "#2fb3ff" : "#ffd60a";
+    ctx.fillStyle = n.kind === "corner" ? "#ffffff" : n.kind === "water" ? (COLOURS.water || "#2fb3ff") : (COLOURS.hazard || "#ffd60a");
     ctx.beginPath(); ctx.arc(x, y, 3.5 * dpr, 0, 7); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,.85)";
     ctx.fillText(n.text, x + 6 * dpr, y - 4 * dpr);

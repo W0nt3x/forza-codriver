@@ -178,5 +178,68 @@ def test_long_calls_shrink_to_fit_the_box():
         right_edge = max(img.getpixel((width - 1, y))[3] for y in range(height))
         assert left_edge == 0 and right_edge == 0, f"text ran off the box at {width}x{height}"
         # and it is still there, readable: opaque pixels in the call line
-        assert max(img.getpixel((x, int(height * 0.79)))[3] for x in range(width)) == 255
+        assert max(img.getpixel((x, int(height * 0.815)))[3] for x in range(width)) == 255
+
+
+# --------------------------------------------------------------------------
+# stage 3: one palette, bend by class, distance bar
+# --------------------------------------------------------------------------
+
+
+def test_arrow_colour_and_bend_follow_the_shared_palette():
+    from codriver.overlay.render import arrow_geometry
+
+    style = Style()
+    hairpin = NoteBrief("1 left", ("1", "left"), 1, "left", "corner", 80.0)
+    kink = NoteBrief("6 right", ("6", "right"), 6, "right", "corner", 80.0)
+    assert style.colour_for(hairpin) == style.severity_rgb[0] == (255, 59, 48), "class 1 is the palette's red"
+    assert style.colour_for(kink) == style.severity_rgb[5]
+    assert style.colour_for(NoteBrief("jump", ("jump",), None, None, "jump", 1.0)) == style.hazard_rgb
+    assert style.colour_for(NoteBrief("water", ("water",), None, None, "water", 1.0)) == style.water_rgb
+    # a hairpin's head ends up pointing back down, a kink's still points up
+    pts, head, _ = arrow_geometry(300, 300, style, "left", style.bend_for(hairpin))
+    tip, base1, base2 = head
+    assert tip[1] > (base1[1] + base2[1]) / 2, "hairpin: the head points down"
+    assert max(p[0] for p in pts) > min(p[0] for p in pts) + 30, "and it bends to the side"
+    pts, head, _ = arrow_geometry(300, 300, style, "right", style.bend_for(kink))
+    tip, base1, base2 = head
+    assert tip[1] < (base1[1] + base2[1]) / 2, "kink: the head still points up"
+    assert tip[0] > 150, "right-hander: to the right of centre"
+    # the picture really uses the class colour
+    img = render_frame(View("tracking", hairpin, None, 80.0, 60.0, True), 300, 300, style)
+    reds = sum(1 for x in range(0, 300, 3) for y in range(0, 200, 3)
+               if img.getpixel((x, y))[:3] == (255, 59, 48) and img.getpixel((x, y))[3] == 255)
+    assert reds > 50
+
+
+def test_distance_bar_shrinks_towards_the_corner():
+    style = Style(bar_full_m=200.0)
+    corner = NoteBrief("3 right", ("3", "right"), 3, "right", "corner", 500.0)
+    colour = style.colour_for(corner)
+
+    def bar_pixels(distance):
+        img = render_frame(View("tracking", corner, None, distance, 80.0, True), 400, 300, style)
+        y = int(300 * 0.725)
+        return sum(1 for x in range(400) if img.getpixel((x, y))[:3] == colour and img.getpixel((x, y))[3] > 200)
+
+    full, half, near = bar_pixels(250.0), bar_pixels(100.0), bar_pixels(10.0)
+    assert full > half > near, (full, half, near)
+    assert abs(half / full - 0.5) < 0.15, "half the distance, half the bar"
+
+
+def test_state_serves_the_palette_and_the_page_has_no_second_one():
+    from pathlib import Path
+
+    from codriver.config import Config, find_config_dir
+    from codriver.ui.server import display_colours
+
+    cfg = Config.load(find_config_dir())
+    pal = display_colours(cfg)
+    assert set(pal) == {"1", "2", "3", "4", "5", "6", "S", "hazard", "water"}
+    assert pal["1"] == cfg.get("display.colours.class_1")
+    root = Path(find_config_dir()).parent
+    app_js = (root / "src/codriver/ui/static/app.js").read_text(encoding="utf-8")
+    assert "CLASS_COLOUR" not in app_js and "#ff3b30" not in app_js, "the palette lives in the config only"
+    css = (root / "src/codriver/ui/static/style.css").read_text(encoding="utf-8")
+    assert "var(--c1" in css and ".c1 { background: #" not in css
 
