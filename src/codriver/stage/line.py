@@ -123,6 +123,46 @@ def split_segments(
     return segments
 
 
+def splice_rewinds(
+    segments: Sequence[Sequence[TelemetryFrame]],
+    max_off_m: float = 30.0,
+    max_gap_s: float = 120.0,
+) -> list[list[TelemetryFrame]]:
+    """Sew a drive back together across rewinds and restarts.
+
+    A rewind cuts a drive in two: the segment before it, and one that
+    resumes somewhere the car had already been. The road between the rewind
+    target and the cut was driven twice; only the second time counts. So
+    when a segment starts on the previous segment's line (within
+    ``max_off_m``, both inside an event, within ``max_gap_s``), the previous
+    one is cut at that point and the new one continues from there. A
+    restart resumes at the start, which replaces the first attempt whole.
+    """
+    out: list[list[TelemetryFrame]] = []
+    for seg in segments:
+        if out:
+            prev = out[-1]
+            if is_event(prev) and is_event(seg) and 0.0 <= seg[0].t - prev[-1].t <= max_gap_s:
+                cut = _latest_point_near(prev, seg[0], max_off_m)
+                if cut is not None:
+                    out[-1] = list(prev[:cut]) + list(seg)
+                    continue
+        out.append(list(seg))
+    return out
+
+
+def _latest_point_near(frames: Sequence[TelemetryFrame], target: TelemetryFrame, max_off_m: float) -> int | None:
+    """Index of the last frame within ``max_off_m`` of ``target``, the most
+    recent pass on a circuit, or None."""
+    best: int | None = None
+    best_d = max_off_m
+    for i, f in enumerate(frames):
+        d = math.hypot(f.x - target.x, f.z - target.z)
+        if d <= best_d:
+            best, best_d = i, d
+    return best
+
+
 def is_event(segment: Sequence[TelemetryFrame]) -> bool:
     """True when most of the frames were driven inside an event (a race, a
     stage), not in free roam. The game reports a race position only there."""

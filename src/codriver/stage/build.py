@@ -47,6 +47,8 @@ class BuildReport:
     lap_used: int = -1
     """Which lap became the stage; -1 means the whole drive."""
     loop: bool = False
+    rewinds_spliced: int = 0
+    """Segments sewn back onto the one before them: rewinds and restarts."""
     frames_used: int = 0
     raw_points: int = 0
     raw_length_m: float = 0.0
@@ -70,6 +72,11 @@ class BuildReport:
                 f"  segments        {self.segments_found} found, using "
                 f"#{self.segment_used} ({self.frames_used} frames, "
                 f"{'in an event' if self.segment_event else 'free roam'})"
+            )
+        if self.rewinds_spliced:
+            out.append(
+                f"  rewinds         {self.rewinds_spliced} spliced: the drive continues "
+                f"from where each rewind landed"
             )
         if self.laps_seen >= 2:
             out.append(
@@ -271,10 +278,14 @@ def build_stage(
     report.segments_found = len(segments)
 
     if segment_index is None:
-        # The race, not the drive to it: a recording that starts in free
-        # roam holds both, and the drive there is often the longer one.
+        # Rewinds, restarts and pauses sewn back together first; then the
+        # race, not the drive to it: a recording that starts in free roam
+        # holds both, and the drive there is often the longer one.
+        segments = line_mod.splice_rewinds(segments, max_off_m=cfg.get("stage.line.rewind_splice_m"))
+        report.rewinds_spliced = report.segments_found - len(segments)
         chosen = line_mod.pick_segment(segments)
     else:
+        # An explicit pick addresses the raw pieces, as the report lists them.
         if not 0 <= segment_index < len(segments):
             raise ValueError(
                 f"segment {segment_index} does not exist; "

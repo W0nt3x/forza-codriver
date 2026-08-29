@@ -36,45 +36,128 @@ EventFn = Callable[[dict], None]
 
 @dataclass
 class RaceDetector:
-    """Frames in, "start" / "end" out. Pure, so it is tested without a socket."""
+    """Frames in, "start" / "end" out. Pure, so it is tested without a socket.
+
+    Three kinds of packet, from the captures:
+
+    * racing: IsRaceOn and a race position. The event, first metre to finish.
+    * blank: IsRaceOn 0, position 0, race clock 0, the car parked at one far
+      away spot. The game sends these during a pause, a rewind, the results
+      screen. A rewind looks exactly like the finish while it lasts, so
+      blank packets do not end a race on their own; what comes next does.
+    * free roam: IsRaceOn without a race position. You have left the event.
+
+    Coming back from blank packets, where the car is tells the story: a
+    pause, a rewind and a restart all resume on road this race has driven
+    (a rewind a few seconds back, a restart at the line); the next event,
+    entered from the results screen, resumes somewhere else. Only that ends
+    the race. So does free roam, quickly, and a very long blank or silent
+    stretch as the fallback. The race clock is no help: in the captures it
+    runs on across a restart and even into the next event, and resets only
+    on the way through free roam.
+    """
 
     start_frames: int = 15
     end_s: float = 3.0
-    gap_s: float = 5.0
+    """Free-roam packets for this long end the race."""
+    gap_s: float = 300.0
+    """Blank packets, or no packets at all, for this long end the race.
+    Rewinds and pauses shorter than this keep it going."""
+    restart_s: float = 5.0
+    """Racing again with the race clock under this, after it had run past
+    it: the clock started over, this is a new race."""
+    path_every: int = 30
+    """Remember every Nth racing position, the race's own road."""
+    path_radius_m: float = 150.0
+    """Resuming further than this from every remembered position is not a
+    rewind or a restart of this race: it is another one."""
     in_race: bool = False
     _hits: int = 0
     _last_racing_t: float | None = None
     _last_packet_t: float | None = None
+    _last_race_time: float = 0.0
+    _blank_since: float | None = None
+    _roam_since: float | None = None
+    _path: list[tuple[float, float]] = field(default_factory=list)
+    _seen: int = 0
 
     @staticmethod
     def racing(frame: TelemetryFrame) -> bool:
         """In an event: IsRaceOn and a race position. Free roam keeps IsRaceOn
-        but reports position 0; menus send IsRaceOn 0."""
+        but reports position 0; menus, pauses and rewinds send IsRaceOn 0."""
         return bool(frame.race_on) and int(frame.race_position) >= 1
 
     def update(self, frame: TelemetryFrame, t: float) -> str | None:
         self._last_packet_t = t
         if self.racing(frame):
+            resumed = self._blank_since is not None
+            self._blank_since = self._roam_since = None
             self._last_racing_t = t
-            if not self.in_race:
-                self._hits += 1
-                if self._hits >= self.start_frames:
-                    self.in_race = True
-                    self._hits = 0
-                    return "start"
+            if self.in_race:
+                if resumed and not self._near_path(frame):
+                    # somewhere this race never went: the next event
+                    return self._next_race(frame)
+                if (resumed and frame.race_time < self.restart_s
+                        and self._last_race_time > self.restart_s):
+                    # the clock started over: a new race
+                    return self._next_race(frame)
+                self._remember(frame)
+                self._last_race_time = float(frame.race_time)
+                return None
+            self._hits += 1
+            if self._hits >= self.start_frames:
+                self.in_race = True
+                self._hits = 0
+                self._last_race_time = float(frame.race_time)
+                self._path = [(float(frame.x), float(frame.z))]
+                self._seen = 0
+                return "start"
             return None
         self._hits = 0
-        if self.in_race and self._last_racing_t is not None and t - self._last_racing_t >= self.end_s:
-            self.in_race = False
-            return "end"
-        return None
+        if not self.in_race:
+            return None
+        if not frame.race_on:
+            # blank: pause, rewind, results. Hold; the resume decides.
+            self._roam_since = None
+            if self._blank_since is None:
+                self._blank_since = t
+            return self._end() if t - self._blank_since >= self.gap_s else None
+        # free roam: the event is over
+        self._blank_since = None
+        if self._roam_since is None:
+            self._roam_since = t
+        return self._end() if t - self._roam_since >= self.end_s else None
+
+    def _end(self) -> str:
+        self.in_race = False
+        self._hits = 0
+        self._blank_since = self._roam_since = None
+        return "end"
+
+    def _next_race(self, frame: TelemetryFrame) -> str:
+        """This racing packet belongs to a new race: end the old one, and
+        count the packet towards the new one's start."""
+        self._end()
+        self._hits = 1
+        self._last_race_time = float(frame.race_time)
+        return "end"
+
+    def _remember(self, frame: TelemetryFrame) -> None:
+        self._seen += 1
+        if self._seen % self.path_every == 0:
+            self._path.append((float(frame.x), float(frame.z)))
+
+    def _near_path(self, frame: TelemetryFrame) -> bool:
+        if not self._path:
+            return True
+        r2 = self.path_radius_m ** 2
+        return any((x - frame.x) ** 2 + (z - frame.z) ** 2 <= r2 for x, z in self._path)
 
     def tick(self, t: float) -> str | None:
-        """No packet arrived: a long silence (loading screen) ends a race too."""
+        """No packet arrived: a long silence (loading screen, quit to the
+        menu) ends a race too."""
         if self.in_race and self._last_packet_t is not None and t - self._last_packet_t >= self.gap_s:
-            self.in_race = False
-            self._hits = 0
-            return "end"
+            return self._end()
         return None
 
 
@@ -119,7 +202,8 @@ def session_record(
     detector = RaceDetector(
         start_frames=int(cfg.get("capture.auto.start_frames", 15)),
         end_s=float(cfg.get("capture.auto.end_s", 3.0)),
-        gap_s=float(cfg.get("capture.auto.gap_s", 5.0)),
+        gap_s=float(cfg.get("capture.auto.gap_s", 300.0)),
+        restart_s=float(cfg.get("capture.auto.restart_s", 5.0)),
     )
     preroll_s = float(cfg.get("capture.auto.preroll_s", 2.0))
     min_seconds = float(cfg.get("capture.auto.min_seconds", 20.0))

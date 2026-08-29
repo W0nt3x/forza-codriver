@@ -177,6 +177,7 @@ class CoDriver:
         self.stats = RunStats()
         self.display = _Hud(enabled=hud)
         self._was_tracking = False
+        self._last_along_m = 0.0
         self._suspended_announced = False
         self._start_ns: int | None = None
         self._last_status_emit = 0.0
@@ -232,6 +233,9 @@ class CoDriver:
             return
         self.stats.frames += 1
         if not frame.race_on:
+            # A blank packet: the game is paused, rewinding, or past the
+            # finish. Same as silence: stop talking, drop what was queued.
+            self.on_idle(now)
             return
         self._suspended_announced = False
         stats, scheduler, player, bank, display = self.stats, self.scheduler, self.player, self.bank, self.display
@@ -246,7 +250,18 @@ class CoDriver:
 
         if fix.ok:
             stats.fixes += 1
-            if not self._was_tracking or fix.jumped:
+            # A short rewind lands within the search window: no jump, still
+            # tracking, but the car is behind where it was. The notes fired
+            # for the road it is about to drive again must fire again.
+            rewound = (fix.resumed_from_gap and not fix.jumped and self._was_tracking
+                       and fix.along_m < self._last_along_m - 5.0)
+            if rewound:
+                stats.rewinds += 1
+                scheduler.flush()
+                player.stop_all()
+                display.event(f"-- rewound {self._last_along_m - fix.along_m:.0f} m, re-arming the notes")
+                self.emit({"kind": "rewind", "metres": round(self._last_along_m - fix.along_m)})
+            if not self._was_tracking or fix.jumped or rewound:
                 stats.reacquires += 1
                 scheduler.relocate(fix.along_m)
                 display.event(
@@ -255,6 +270,7 @@ class CoDriver:
                 )
                 self.emit({"kind": "localised", "along_m": fix.along_m, "off_m": fix.off_line_m})
             self._was_tracking = True
+            self._last_along_m = fix.along_m
 
             for event in scheduler.tick(fix.along_m, frame.speed, now):
                 player.play(bank.render(event.note.tokens))

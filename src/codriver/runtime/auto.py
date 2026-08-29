@@ -117,7 +117,8 @@ def session_auto(
     detector = RaceDetector(
         start_frames=int(cfg.get("capture.auto.start_frames", 15)),
         end_s=float(cfg.get("capture.auto.end_s", 3.0)),
-        gap_s=float(cfg.get("capture.auto.gap_s", 5.0)),
+        gap_s=float(cfg.get("capture.auto.gap_s", 300.0)),
+        restart_s=float(cfg.get("capture.auto.restart_s", 5.0)),
     )
     preroll_s = float(cfg.get("capture.auto.preroll_s", 2.0))
     min_seconds = float(cfg.get("capture.auto.min_seconds", 20.0))

@@ -309,6 +309,7 @@ function onRun(e) {
   if (e.kind === "localised") { $("#hud-sub").textContent = `localised at ${fmtKm(e.along_m)} km (${e.off_m.toFixed(1)} m off line)`; }
   if (e.kind === "suspended") { $("#hud-state").textContent = "suspended"; $("#hud-sub").textContent = "stream stopped (pause / rewind / finish?)"; }
   if (e.kind === "jump") { $("#hud-sub").textContent = "position jump, rewound? re-localising"; }
+  if (e.kind === "rewind") { $("#hud-sub").textContent = `rewound ${e.metres} m, notes re-armed`; }
   if (e.kind === "status") {
     $("#hud-state").textContent = e.state;
     $("#hud-km").textContent = fmtKm(e.along_m);

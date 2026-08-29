@@ -45,10 +45,18 @@ capture:
     # This many racing packets in a row before a race counts, about half a
     # second. Keeps a single stray packet from opening a file.
     start_frames: 15
-    # This long without racing packets ends the race (finish, quit, menu).
+    # Free-roam packets (IsRaceOn without a race position) for this long
+    # end the race: you left the event.
     end_s: 3.0
-    # No packets at all for this long ends it too (loading screens).
-    gap_s: 5.0
+    # Blank packets (IsRaceOn 0: a pause, a rewind, the results screen) or
+    # no packets at all for this long end the race. A rewind or pause
+    # shorter than this keeps the race, its recording and the co-driver
+    # going. The finish is resolved sooner by what you do next: back to
+    # free roam ends it in end_s, the next event ends it as it starts.
+    gap_s: 300.0
+    # Racing again with the race clock under this many seconds, after it
+    # had run past that, is a new race.
+    restart_s: 5.0
     # Seconds before the race start to keep, so the recording has the
     # countdown and the first metre.
     preroll_s: 2.0
@@ -92,6 +100,11 @@ stage:
     # ...and it has to be at least this long, so a short rewind back to the
     # start is not mistaken for a circuit.
     loop_min_length_m: 300.0
+    # After a rewind the drive resumes on road already driven. When it
+    # resumes within this many metres of the earlier line, the earlier
+    # line is cut there and the drive continues; the stretch driven twice
+    # counts once.
+    rewind_splice_m: 30.0
 
   resample:
     # Gaps in the recording longer than this (metres) are filled in first.
