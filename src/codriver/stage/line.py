@@ -85,30 +85,89 @@ def split_segments(
     frames: Sequence[TelemetryFrame],
     gap_s: float = 0.5,
     min_points: int = 60,
+    jump_m: float = 50.0,
 ) -> list[list[TelemetryFrame]]:
     """Cut a capture into runs of continuous driving.
 
-    A run ends when ``IsRaceOn`` goes false or when the stream stops for
-    longer than ``gap_s``. Both are meaningful: the game sends nothing during
-    menus, pauses, rewinds and after the finish line, so a gap is
-    a session boundary rather than an error.
+    A run ends when ``IsRaceOn`` goes false, when the stream stops for
+    longer than ``gap_s``, when the car teleports further than ``jump_m``
+    between two frames (the game moving it to an event's start line, a
+    rewind), or when it enters or leaves an event (``RacePosition`` going
+    between 0 and 1-or-more). All of these are session boundaries rather
+    than errors: a recording that starts in free roam, drives to a race and
+    races it holds two drives, and only one of them is the stage.
     """
     segments: list[list[TelemetryFrame]] = []
     current: list[TelemetryFrame] = []
+
+    def cut() -> None:
+        nonlocal current
+        if len(current) >= min_points:
+            segments.append(current)
+        current = []
+
     for f in frames:
         if not f.race_on:
-            if len(current) >= min_points:
-                segments.append(current)
-            current = []
+            cut()
             continue
-        if current and f.t - current[-1].t > gap_s:
-            if len(current) >= min_points:
-                segments.append(current)
-            current = []
+        if current:
+            last = current[-1]
+            if (
+                f.t - last.t > gap_s
+                or math.hypot(f.x - last.x, f.z - last.z) > jump_m
+                or (f.race_position >= 1) != (last.race_position >= 1)
+            ):
+                cut()
         current.append(f)
-    if len(current) >= min_points:
-        segments.append(current)
+    cut()
     return segments
+
+
+def is_event(segment: Sequence[TelemetryFrame]) -> bool:
+    """True when most of the frames were driven inside an event (a race, a
+    stage), not in free roam. The game reports a race position only there."""
+    if not segment:
+        return False
+    return sum(1 for f in segment if f.race_position >= 1) * 2 > len(segment)
+
+
+def pick_segment(segments: Sequence[Sequence[TelemetryFrame]]) -> int:
+    """Which segment is the stage: the longest drive inside an event, or, in
+    a recording with no event at all (a free-roam route), the longest drive.
+    Never the drive *to* the race just because it took longer."""
+    if not segments:
+        raise ValueError("no segments to pick from")
+    events = [i for i, s in enumerate(segments) if is_event(s)]
+    pool = events or list(range(len(segments)))
+    return max(pool, key=lambda i: len(segments[i]))
+
+
+def lap_boundaries(segment: Sequence[TelemetryFrame]) -> list[int]:
+    """Frame indices where the game's lap counter went up: the start/finish
+    line crossings of a circuit race. Empty for a point-to-point stage."""
+    return [i for i in range(1, len(segment)) if segment[i].lap > segment[i - 1].lap]
+
+
+def first_full_lap(segment: Sequence[TelemetryFrame]) -> tuple[list[TelemetryFrame], int, int]:
+    """One lap of a circuit: the frames between the first two line crossings.
+
+    Returns ``(frames, lap_used, laps_seen)``. A recording with fewer than
+    two crossings (a point-to-point stage, or a single lap from the grid) is
+    returned whole with ``lap_used`` -1. Lap 0 runs from the grid to the
+    line and is not a full lap; the first line-to-line lap is.
+    """
+    crossings = lap_boundaries(segment)
+    if len(crossings) < 2:
+        return list(segment), -1, len(crossings)
+    return list(segment[crossings[0]:crossings[1]]), 1, len(crossings)
+
+
+def closes_on_itself(line: Sequence[LinePoint], close_m: float = 60.0, min_length_m: float = 300.0) -> bool:
+    """Does the line end where it began? Then it is a circuit and the
+    co-driver must keep going round instead of falling silent at the seam."""
+    if len(line) < 3:
+        return False
+    return total_length(line) >= min_length_m and ground_distance(line[0], line[-1]) <= close_m
 
 
 def to_line(

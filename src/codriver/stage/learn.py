@@ -147,7 +147,7 @@ def learn_stage(
 
     line = stage.line
     n = len(line)
-    index = StageIndex(line, cumulative_distance(line))
+    index = StageIndex(line, cumulative_distance(line), loop=stage.loop)
     normals = _normals(line)
 
     # The current line is itself a sample: offset 0, with the recon speeds.
@@ -210,6 +210,7 @@ def learn_stage(
             + report.runs_used,
             "learn_samples": int(stage.generator.get("learn_samples", 0)) + report.samples,
         },
+        loop=stage.loop,
     )
     report.build = build
 

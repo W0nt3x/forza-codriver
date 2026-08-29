@@ -30,6 +30,10 @@ class NoteBrief:
     direction: str | None
     kind: str
     at_m: float
+    in_m: float | None = None
+    """Metres ahead of the car when the status was sent, as the runtime
+    measured it; on a circuit that is the short way round the seam, which
+    ``at_m - along_m`` gets wrong for the first corners of the next lap."""
 
     @classmethod
     def from_dict(cls, d: Any) -> "NoteBrief | None":
@@ -38,6 +42,7 @@ class NoteBrief:
         try:
             tokens = tuple(str(t)[:40] for t in (d.get("tokens") or []))[:24]
             sev = d.get("severity")
+            in_m = d.get("in_m")
             return cls(
                 text=str(d.get("text") or " ".join(tokens))[:120],
                 tokens=tokens,
@@ -45,6 +50,7 @@ class NoteBrief:
                 direction=str(d["direction"])[:10] if d.get("direction") else None,
                 kind=str(d.get("kind") or "corner")[:20],
                 at_m=float(d.get("at_m", 0.0)),
+                in_m=float(in_m) if in_m is not None else None,
             )
         except (TypeError, ValueError):
             return None
@@ -125,14 +131,15 @@ class OverlayState:
             after = self.upcoming[1] if len(self.upcoming) > 1 else None
             distance = None
             if nxt is not None:
-                along = self.along_m
+                rolled = 0.0
                 if mode == "tracking":
                     if now - self.status_t > STALE_AFTER_S:
                         mode = "stale"
                     else:
                         # between two status events, roll the position forward
                         # at the last known speed so the distance moves smoothly
-                        along += self.speed_mps * max(0.0, now - self.status_t)
-                distance = max(0.0, nxt.at_m - along)
+                        rolled = self.speed_mps * max(0.0, now - self.status_t)
+                ahead = nxt.in_m if nxt.in_m is not None else nxt.at_m - self.along_m
+                distance = max(0.0, ahead - rolled)
             return View(mode=mode, next=nxt, after=after, distance_m=distance,
                         speed_kmh=self.speed_mps * 3.6, connected=self.connected)

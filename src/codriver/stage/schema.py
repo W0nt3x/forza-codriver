@@ -72,6 +72,9 @@ class Stage:
     notes: list[Note] = field(default_factory=list)
     spacing_m: float = 3.0
     length_m: float = 0.0
+    loop: bool = False
+    """A circuit: the line ends where it starts and the co-driver keeps
+    going round. A point-to-point stage ends at its last point."""
     source: dict[str, Any] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     generator: dict[str, Any] = field(default_factory=dict)
@@ -109,6 +112,7 @@ def to_dict(stage: Stage) -> dict[str, Any]:
         "source": stage.source,
         "config": stage.config,
         "length_m": round(stage.length_m, 2),
+        "loop": bool(stage.loop),
         "spacing_m": stage.spacing_m,
         "points": len(stage.line),
         "notes": [
@@ -229,6 +233,7 @@ def from_dict(data: dict[str, Any]) -> Stage:
             notes=notes,
             spacing_m=float(data.get("spacing_m", 3.0)),
             length_m=float(data.get("length_m", 0.0)),
+            loop=bool(data.get("loop", False)),
             source=data.get("source") if isinstance(data.get("source"), dict) else {},
             config=data.get("config") if isinstance(data.get("config"), dict) else {},
             generator=data.get("generator") if isinstance(data.get("generator"), dict) else {},

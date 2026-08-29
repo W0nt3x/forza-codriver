@@ -28,6 +28,7 @@ import logging
 import re
 import subprocess
 import tempfile
+from typing import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -117,8 +118,20 @@ def post_process(
 # --------------------------------------------------------------------------
 
 
-def _synthesize_edge(texts: dict[str, str], voice: str, rate: str) -> dict[str, tuple[np.ndarray, int]]:
-    """All tokens through edge-tts. Returns token -> (samples, samplerate)."""
+def _synthesize_edge(
+    texts: dict[str, str],
+    voice: str,
+    rate: str,
+    should_stop: Callable[[], bool] | None = None,
+    chunk_timeout_s: float = 30.0,
+) -> dict[str, tuple[np.ndarray, int]]:
+    """All tokens through edge-tts. Returns token -> (samples, samplerate).
+
+    Bounded: a batch of words that gets no answer within ``chunk_timeout_s``
+    fails the run instead of hanging it, and ``should_stop`` is checked
+    between batches. A voice job that never ends would otherwise sit on
+    the UI's one job slot and every other button with it.
+    """
     import asyncio
 
     import soundfile as sf
@@ -139,9 +152,12 @@ def _synthesize_edge(texts: dict[str, str], voice: str, rate: str) -> dict[str, 
         results = []
         items = list(texts.items())
         for i in range(0, len(items), 6):
+            if should_stop is not None and should_stop():
+                raise GenerationError("voice generation stopped")
             chunk = items[i : i + 6]
-            results += await asyncio.gather(
-                *(one(tok, txt, out_dir) for tok, txt in chunk)
+            results += await asyncio.wait_for(
+                asyncio.gather(*(one(tok, txt, out_dir) for tok, txt in chunk)),
+                timeout=chunk_timeout_s,
             )
             log.info("edge-tts: %d/%d", min(i + 6, len(items)), len(items))
         return results
@@ -151,6 +167,13 @@ def _synthesize_edge(texts: dict[str, str], voice: str, rate: str) -> dict[str, 
         tmp_dir = Path(tmp)
         try:
             results = asyncio.run(all_tokens(tmp_dir))
+        except GenerationError:
+            raise
+        except asyncio.TimeoutError as exc:
+            raise GenerationError(
+                f"edge-tts gave no answer for {chunk_timeout_s:.0f} s. "
+                f"No network? Try --engine sapi."
+            ) from exc
         except Exception as exc:
             raise GenerationError(
                 f"edge-tts failed ({exc}). No network? Try --engine sapi."
@@ -239,6 +262,7 @@ def generate_pack(
     rate: str = "+15%",
     language: str = "en",
     tokens: dict[str, str] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> GenerateResult:
     """Generate, post-process and write a complete voice pack.
 
@@ -273,7 +297,7 @@ def generate_pack(
             raise GenerationError(
                 f"no default edge voice for language {language!r}; pass --voice"
             )
-        raw = _synthesize_edge(texts, voice, rate)
+        raw = _synthesize_edge(texts, voice, rate, should_stop=should_stop)
     elif engine == "sapi":
         raw = _synthesize_sapi(texts, voice, rate)
         voice = voice or "system default"

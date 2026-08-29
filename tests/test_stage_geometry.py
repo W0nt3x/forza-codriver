@@ -81,9 +81,9 @@ def test_to_line_drops_points_the_car_did_not_move_between():
 def test_split_segments_cuts_on_race_off_and_on_stream_gaps():
     from codriver.adapters.base import TelemetryFrame
 
-    def run(t0, n, race_on=True):
+    def run(t0, n, race_on=True, x0=0.0):
         return [
-            TelemetryFrame(t=t0 + i / 60, x=float(i), y=0.0, z=0.0, race_on=race_on)
+            TelemetryFrame(t=t0 + i / 60, x=x0 + float(i), y=0.0, z=0.0, race_on=race_on)
             for i in range(n)
         ]
 
@@ -94,9 +94,13 @@ def test_split_segments_cuts_on_race_off_and_on_stream_gaps():
     assert len(segments) == 3
     assert all(len(s) == 100 for s in segments)
 
-    # A silence shorter than the threshold is just frame jitter, not a break.
-    merged = split_segments(run(0.0, 100) + run(2.0, 100), gap_s=0.5, min_points=60)
+    # A silence shorter than the threshold is just frame jitter, not a break,
+    # as long as the car is still where it was (it carries on from x=100).
+    merged = split_segments(run(0.0, 100) + run(2.0, 100, x0=100.0), gap_s=0.5, min_points=60)
     assert len(merged) == 1
+    # ...but a teleport back to the start in that same short silence is one.
+    teleported = split_segments(run(0.0, 100) + run(2.0, 100), gap_s=0.5, min_points=60)
+    assert len(teleported) == 2
 
 
 def test_trim_stationary_removes_both_ends():

@@ -817,3 +817,34 @@ def test_page_and_static_files_are_always_revalidated(client):
         assert r.headers.get("cache-control") == "no-cache", path
     assert "cache-control" not in {k.lower() for k in c.get("/api/state").headers} or         c.get("/api/state").headers.get("cache-control") != "no-cache"
 
+
+
+def test_start_co_driver_takes_over_from_a_running_recording(client):
+    """Auto-record running on the Setup tab must not make the Drive tab's
+    Start a dead button: Start stops the recording and takes the port. The
+    first outside tester reported exactly that dead button."""
+    import socket
+
+    c, root, cfg = client
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as free:
+        free.bind(("127.0.0.1", 0))
+        cfg.data["telemetry"]["port"] = free.getsockname()[1]
+    write_synth(root / "recordings" / "slalom.fzr",
+                SynthSpec(shape="slalom", duration_s=50.0, speed_mps=18.0, size_m=60.0,
+                          pause_at_s=None, jump_at_s=None))
+    assert c.post("/api/build", json={"capture": "slalom.fzr", "name": "slalom"}).status_code == 200
+
+    assert c.post("/api/session").status_code == 200
+    time.sleep(0.2)
+    assert c.get("/api/state").json()["job"]["kind"] == "session"
+    r = c.post("/api/run", json={"stage": "slalom", "silent": True})
+    assert r.status_code == 200 and r.json()["job"]["kind"] == "run"
+    time.sleep(0.2)
+    assert c.get("/api/state").json()["job"]["kind"] == "run"
+    assert c.get("/api/stages/slalom").json()["loop"] is False
+    assert c.post("/api/stop").json()["ok"] is True
+    # a job that has to finish first is not taken over
+    assert c.post("/api/scan", json={"duration": 5}).status_code == 200
+    time.sleep(0.2)
+    assert c.post("/api/run", json={"stage": "slalom", "silent": True}).status_code == 409
+    assert c.post("/api/stop").json()["ok"] is True

@@ -276,7 +276,7 @@ src/codriver/
   record/replay.py          deadline-scheduled UDP playback
   record/synth.py           synthetic captures
   record/verify.py          the empirical packet checks
-  stage/line.py             capture -> driving segments -> raw line
+  stage/line.py             capture -> driving segments -> the event, one lap of it -> raw line
   stage/resample.py         step 0 of the note algorithm: subdivide, smooth, space evenly
   stage/curvature.py        step 1 of the note algorithm: circle fit -> severity class
   stage/notes.py            the note algorithm steps 2-6, plus telemetry hazards

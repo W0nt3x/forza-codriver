@@ -54,7 +54,9 @@ HUD.
   reserves 5200 to 5300 for the game itself. Press **Check** while driving
   and the page tells you whether the game is talking to it.
 - *Record a recon lap.* Give it a name, press **Start recording**, drive the
-  race once at any speed on a clean line, press **Stop**. Or press
+  race once at any speed on a clean line, press **Stop**. Starting in free
+  roam is fine, the drive to the race is left out; a circuit becomes one
+  lap. Or press
   **Auto-record every race** once for the evening: every race you enter is
   saved on its own, free roam is skipped.
 - *Build.* Press **Build**. The **Stages** tab shows the notes and a map
@@ -268,8 +270,8 @@ Have a wish that is not on the list? Open an issue.
 
 - Forza sends Data Out to exactly one address. If you also run SimHub or a
   motion rig, you need a UDP splitter in front of both.
-- Built for point-to-point races. Multi-lap circuits are untested; the stage
-  ends where the recon recording ended.
+- Circuits: a recording with several laps is cut to one, and the co-driver
+  goes round with you. Verified on one circuit so far.
 - Windows only for now. The offline voice engine and the batch starters are
   the Windows-specific parts, the rest is plain Python.
 

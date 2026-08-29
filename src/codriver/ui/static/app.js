@@ -161,13 +161,25 @@ function setJobPill(job) {
   const pill = $("#jobpill");
   pill.className = "pill " + (job.busy ? "busy" : "idle");
   pill.textContent = job.busy ? job.label || job.kind : "idle";
+  pill.title = job.busy ? "click to stop this" : "";
   $("#btn-capture").disabled = job.busy;
   $("#btn-capture-stop").disabled = !(job.busy && job.kind === "capture");
   $("#btn-session").disabled = job.busy;
   $("#btn-session-stop").disabled = !(job.busy && job.kind === "session");
-  $("#btn-run").disabled = job.busy;
-  $("#btn-auto").disabled = job.busy;
-  $("#btn-run-stop").disabled = !(job.busy && (job.kind === "run" || job.kind === "auto"));
+  // A running recording does not lock the Drive tab: Start stops it and takes
+  // the port. Only another job that has to finish first (voice, scan) does.
+  const recording = job.busy && (job.kind === "capture" || job.kind === "session");
+  const driving = job.busy && (job.kind === "run" || job.kind === "auto");
+  $("#btn-run").disabled = job.busy && !recording;
+  $("#btn-auto").disabled = job.busy && !recording;
+  $("#btn-run-stop").disabled = !driving;
+  const why = $("#drive-busy");
+  why.hidden = !job.busy || driving;
+  if (!why.hidden) {
+    why.textContent = recording
+      ? `"${job.label}" is running on the Setup tab. Start co-driver or Auto stops it and takes over the telemetry port.`
+      : `"${job.label}" is running; the Drive buttons come back when it is done. Click the badge at the top to stop it.`;
+  }
   $("#btn-scan").disabled = job.busy;
   $("#btn-voice-gen").disabled = job.busy;
 }
@@ -265,6 +277,7 @@ $("#btn-run").onclick = () => {
   api("/api/run", "POST", { stage: $("#drive-stage").value, record: $("#drive-record").checked }).catch((x) => alert(x.message));
 };
 $("#btn-run-stop").onclick = () => api("/api/stop", "POST");
+$("#jobpill").onclick = () => { if ($("#jobpill").classList.contains("busy")) api("/api/stop", "POST").catch((x) => alert(x.message)); };
 $("#btn-auto").onclick = () => { $("#calls").innerHTML = ""; api("/api/auto", "POST", {}).catch((x) => alert(x.message)); };
 function onAuto(e) {
   if (e.kind === "auto_started") {
@@ -302,7 +315,10 @@ function onRun(e) {
     $("#hud-speed").textContent = e.speed_kmh.toFixed(0);
     $("#hud-off").textContent = e.off_m.toFixed(1) + " m";
     $("#hud-counts").textContent = `${e.spoken} / ${e.dropped}`;
-    if (e.next) { $("#hud-next").textContent = e.next; $("#hud-sub").textContent = `in ${Math.max(0, e.next_at_m - e.along_m).toFixed(0)} m`; }
+    if (e.next) {
+      const inM = e.next_in_m != null ? e.next_in_m : e.next_at_m - e.along_m;
+      $("#hud-next").textContent = e.next; $("#hud-sub").textContent = `in ${Math.max(0, inM).toFixed(0)} m`;
+    }
     else { $("#hud-next").textContent = "no notes remaining"; }
   }
   if (e.kind === "note") {
@@ -321,7 +337,7 @@ async function showStage(name) {
   document.querySelectorAll("#community-list li").forEach((li) => li.classList.remove("sel"));
   $("#community-actions").hidden = true;
   const st = await api(`/api/stages/${name}`);
-  $("#stage-title").textContent = `${st.name}, ${fmtKm(st.length_m)} km, ${st.notes.length} notes`;
+  $("#stage-title").textContent = `${st.name}, ${fmtKm(st.length_m)} km, ${st.notes.length} notes${st.loop ? ", circuit: one lap, called every lap" : ""}`;
   $("#stage-actions").hidden = false;
   $("#learn-count").textContent = st.runs.length;
   $("#btn-learn").disabled = st.runs.length === 0;

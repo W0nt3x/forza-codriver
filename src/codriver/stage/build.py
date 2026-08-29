@@ -40,6 +40,13 @@ class BuildReport:
 
     segments_found: int = 0
     segment_used: int = 0
+    segment_event: bool = True
+    """Was the chosen drive inside an event (race position reported)?"""
+    laps_seen: int = 0
+    """Start/finish line crossings in the chosen drive."""
+    lap_used: int = -1
+    """Which lap became the stage; -1 means the whole drive."""
+    loop: bool = False
     frames_used: int = 0
     raw_points: int = 0
     raw_length_m: float = 0.0
@@ -61,8 +68,16 @@ class BuildReport:
         if self.segments_found:
             out.append(
                 f"  segments        {self.segments_found} found, using "
-                f"#{self.segment_used} ({self.frames_used} frames)"
+                f"#{self.segment_used} ({self.frames_used} frames, "
+                f"{'in an event' if self.segment_event else 'free roam'})"
             )
+        if self.laps_seen >= 2:
+            out.append(
+                f"  laps            {self.laps_seen} line crossings, using lap "
+                f"{self.lap_used} (line to line)"
+            )
+        if self.loop:
+            out.append("  circuit         the line closes on itself: the co-driver goes round again")
         out += [
             f"  raw line        {self.raw_points} points, {self.raw_length_m:.0f} m",
             f"  resampled       {self.resampled_points} points, "
@@ -113,9 +128,11 @@ def stage_from_line(
     source: dict[str, Any] | None = None,
     generator: dict[str, Any] | None = None,
     report: BuildReport | None = None,
+    loop: bool = False,
 ) -> tuple[Stage, BuildReport]:
     """Resample, classify and reduce an already-extracted raw line."""
     report = report or BuildReport()
+    report.loop = loop
     report.raw_points = len(raw)
     report.raw_length_m = line_mod.total_length(raw)
     if len(raw) < 3:
@@ -219,6 +236,7 @@ def stage_from_line(
         notes=generated,
         spacing_m=spacing_m,
         length_m=report.length_m,
+        loop=loop,
         source=dict(source or {}),
         config=_stage_config_snapshot(cfg),
         generator=gen,
@@ -243,6 +261,7 @@ def build_stage(
         frames,
         gap_s=cfg.get("runtime.gaps.suspend_after_s"),
         min_points=cfg.get("stage.line.min_segment_frames"),
+        jump_m=cfg.get("runtime.gaps.rewind_jump_m"),
     )
     if not segments:
         raise ValueError(
@@ -252,7 +271,9 @@ def build_stage(
     report.segments_found = len(segments)
 
     if segment_index is None:
-        chosen = max(range(len(segments)), key=lambda i: len(segments[i]))
+        # The race, not the drive to it: a recording that starts in free
+        # roam holds both, and the drive there is often the longer one.
+        chosen = line_mod.pick_segment(segments)
     else:
         if not 0 <= segment_index < len(segments):
             raise ValueError(
@@ -261,16 +282,28 @@ def build_stage(
             )
         chosen = segment_index
     report.segment_used = chosen
-    report.frames_used = len(segments[chosen])
+    report.segment_event = line_mod.is_event(segments[chosen])
+
+    # A circuit race is several laps of the same road. One lap is the
+    # stage; the first line-to-line lap, so it starts and ends at the line.
+    chosen_frames, lap_used, laps_seen = line_mod.first_full_lap(segments[chosen])
+    report.laps_seen = laps_seen
+    report.lap_used = lap_used
+    report.frames_used = len(chosen_frames)
 
     raw = line_mod.to_line(
-        segments[chosen], min_step_m=cfg.get("stage.line.min_step_m")
+        chosen_frames, min_step_m=cfg.get("stage.line.min_step_m")
     )
     raw = line_mod.trim_stationary(
         raw, speed_threshold=cfg.get("stage.line.trim_below_kmh") / 3.6
     )
     if len(raw) < 3:
         raise ValueError("not enough movement in this capture to build a stage")
+    loop = line_mod.closes_on_itself(
+        raw,
+        close_m=cfg.get("stage.line.loop_close_m"),
+        min_length_m=cfg.get("stage.line.loop_min_length_m"),
+    )
 
     return stage_from_line(
         raw,
@@ -282,6 +315,10 @@ def build_stage(
             "frames": len(frames),
             "segment": chosen,
             "segments_in_capture": len(segments),
+            "event": report.segment_event,
+            "lap": lap_used,
+            "laps_in_capture": laps_seen,
         },
         report=report,
+        loop=loop,
     )

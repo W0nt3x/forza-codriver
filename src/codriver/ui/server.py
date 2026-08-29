@@ -540,6 +540,7 @@ def _stage_detail_dict(st) -> dict:
     return {
         "name": st.name,
         "length_m": st.length_m,
+        "loop": bool(st.loop),
         "spacing_m": st.spacing_m,
         "line": [[round(p.x, 1), round(p.z, 1)] for p in st.line],
         "markings": [m.label for m in st.markings],
@@ -576,6 +577,7 @@ def _stage_summary(path: Path) -> dict | None:
         "name": path.stem,
         "file": path.name,
         "length_m": st.length_m,
+        "loop": bool(st.loop),
         "notes": len(st.notes),
         "points": len(st.line),
         "learned_runs": len(st.generator.get("learned_from_runs", [])),
@@ -735,6 +737,15 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             raise HTTPException(409, str(exc)) from exc
         return {"ok": True, "job": jobs.status()}
 
+    async def _take_over(*kinds: str) -> None:
+        """Stop a job of one of these kinds if it is running. Pressing Start
+        on the Drive tab while a recording holds the telemetry port means
+        the co-driver should have the port now; making the driver hunt for
+        the recording's Stop button on another tab is how "the button never
+        enables" gets reported."""
+        if jobs.busy and jobs.kind in kinds:
+            await asyncio.get_running_loop().run_in_executor(None, jobs.stop)
+
     @app.post("/api/stop")
     async def stop() -> dict:
         ended = await asyncio.get_running_loop().run_in_executor(None, jobs.stop)
@@ -810,6 +821,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
                                 silent=bool((body or {}).get("silent", False)), hud=False,
                                 on_event=emit, should_stop=should_stop)
 
+        await _take_over("capture", "session")
         return _start("auto", job, f"auto: {len(stages)} stage(s) armed")
 
     @app.post("/api/run")
@@ -828,6 +840,7 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
             return run_stage(stage, cfg, silent=bool(body.get("silent", False)), hud=False,
                              record_dir=record_dir, on_event=emit, should_stop=should_stop)
 
+        await _take_over("capture", "session")
         return _start("run", job, f"driving {stage.name}")
 
     # -- stages --------------------------------------------------------------
@@ -985,7 +998,8 @@ def create_app(cfg: Config, root: Path, host_for_links: str | None = None, port:
         def job(emit, should_stop):
             emit({"kind": "voice_started", "name": name, "lang": lang, "engine": engine})
             result = generate_pack(pack_dir, engine=engine, voice=voice,
-                                   samplerate=cfg.get("audio.samplerate"), language=lang)
+                                   samplerate=cfg.get("audio.samplerate"), language=lang,
+                                   should_stop=should_stop)
             # If the configured pack does not exist, this new one becomes the
             # active voice right away. Nobody should generate a voice and then
             # hear beeps because a dropdown still pointed at a missing folder.

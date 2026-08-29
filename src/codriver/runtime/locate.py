@@ -76,22 +76,48 @@ class StageIndex:
     global search scans everything, and runs only on acquire/re-acquire.
     """
 
-    def __init__(self, line: Sequence[LinePoint], cumulative: Sequence[float]):
+    def __init__(self, line: Sequence[LinePoint], cumulative: Sequence[float], loop: bool = False):
         if len(line) < 2:
             raise ValueError("a stage line needs at least two points")
         self.x = np.array([p.x for p in line])
         self.z = np.array([p.z for p in line])
         self.cumulative = np.asarray(cumulative, dtype=float)
         self.n = len(line)
-        # Segment vectors, for projecting the car onto the line between points.
-        self.seg_dx = np.diff(self.x)
-        self.seg_dz = np.diff(self.z)
+        self.loop = bool(loop)
+        # Segment vectors, for projecting the car onto the line between
+        # points. A circuit has one more segment: the seam, last point back
+        # to the first, so the car is never between two points on no segment.
+        xs = np.append(self.x, self.x[0]) if self.loop else self.x
+        zs = np.append(self.z, self.z[0]) if self.loop else self.z
+        self.seg_dx = np.diff(xs)
+        self.seg_dz = np.diff(zs)
         self.seg_len2 = self.seg_dx**2 + self.seg_dz**2
-        self.length_m = float(self.cumulative[-1])
+        self.n_seg = len(self.seg_dx)
+        self.length_m = float(self.cumulative[-1]) + (
+            math.hypot(self.x[0] - self.x[-1], self.z[0] - self.z[-1]) if self.loop else 0.0
+        )
+        """Length of the stage; for a circuit, of one full lap including the seam."""
 
     def nearest(self, x: float, z: float, lo: int = 0, hi: int | None = None) -> tuple[int, float]:
-        """(index, distance) of the nearest line point within [lo, hi)."""
-        hi = self.n if hi is None else min(hi, self.n)
+        """(index, distance) of the nearest line point within [lo, hi).
+
+        On a circuit the window wraps: a window that reaches past the last
+        point continues at the first, which is what carries tracking across
+        the start/finish line without a global search.
+        """
+        hi = self.n if hi is None else hi
+        if self.loop and (lo < 0 or hi > self.n):
+            if hi - lo >= self.n:
+                # the window covers the whole lap: plain search, no clamping
+                # to the end, which would hide the first points from a car
+                # that has just crossed the line
+                lo, hi = 0, self.n
+            else:
+                idx = np.arange(lo, hi) % self.n
+                d2 = (self.x[idx] - x) ** 2 + (self.z[idx] - z) ** 2
+                i = int(np.argmin(d2))
+                return int(idx[i]), float(math.sqrt(d2[i]))
+        hi = min(hi, self.n)
         lo = max(0, lo)
         d2 = (self.x[lo:hi] - x) ** 2 + (self.z[lo:hi] - z) ** 2
         i = int(np.argmin(d2))
@@ -107,7 +133,11 @@ class StageIndex:
         best_along = float(self.cumulative[index])
         best_off = math.hypot(x - self.x[index], z - self.z[index])
         for seg in (index - 1, index):
-            if not 0 <= seg < self.n - 1 or self.seg_len2[seg] <= 0:
+            if self.loop:
+                seg %= self.n_seg
+            elif not 0 <= seg < self.n_seg:
+                continue
+            if self.seg_len2[seg] <= 0:
                 continue
             t = ((x - self.x[seg]) * self.seg_dx[seg] + (z - self.z[seg]) * self.seg_dz[seg]) / self.seg_len2[seg]
             t = min(1.0, max(0.0, t))
@@ -118,6 +148,8 @@ class StageIndex:
                 best_off = off
                 seg_len = math.sqrt(self.seg_len2[seg])
                 best_along = float(self.cumulative[seg]) + t * seg_len
+        if self.loop and best_along >= self.length_m:
+            best_along -= self.length_m
         return best_along, best_off
 
 

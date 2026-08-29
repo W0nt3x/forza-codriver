@@ -332,3 +332,30 @@ def test_generate_pack_refuses_hostile_parameters_before_doing_anything(tmp_path
             generate_pack(tmp_path / "p", **kwargs)
     assert not (tmp_path / "p").exists(), "refused before the folder was even made"
 
+
+
+def test_edge_generation_can_be_stopped_and_does_not_hang(monkeypatch):
+    """A voice job that never ends sits on the UI's one job slot, and every
+    other button with it. Stop must end it, and a silent endpoint must not
+    hold it forever."""
+    import asyncio
+    import sys
+    import time
+    import types
+
+    from codriver.voice.generate import GenerationError, _synthesize_edge
+
+    class Hanging:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def save(self, path):
+            await asyncio.sleep(3600)
+
+    monkeypatch.setitem(sys.modules, "edge_tts", types.SimpleNamespace(Communicate=Hanging))
+    with pytest.raises(GenerationError, match="stopped"):
+        _synthesize_edge({"1": "one"}, "en-GB-RyanNeural", "+15%", should_stop=lambda: True)
+    t0 = time.monotonic()
+    with pytest.raises(GenerationError, match="no answer"):
+        _synthesize_edge({"1": "one"}, "en-GB-RyanNeural", "+15%", chunk_timeout_s=0.2)
+    assert time.monotonic() - t0 < 5.0

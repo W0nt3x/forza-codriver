@@ -150,7 +150,7 @@ class CoDriver:
             log.warning("stage has no notes; the co-driver will have nothing to say")
 
         cumulative = cumulative_distance(stage.line)
-        self.index = StageIndex(stage.line, cumulative)
+        self.index = StageIndex(stage.line, cumulative, loop=stage.loop)
         self.locator = Locator(self.index)
         beeps = BeepBank(
             samplerate=cfg.get("audio.samplerate"),
@@ -158,7 +158,10 @@ class CoDriver:
             crossfade_s=cfg.get("audio.crossfade_ms") / 1000.0,
         )
         self.bank = load_configured_bank(cfg, beeps)
-        self.scheduler = Scheduler(notes=list(stage.notes), duration_fn=self.bank.duration)
+        # A circuit's notes repeat every lap; the lap is the index's length,
+        # which includes the seam from the last point back to the first.
+        self.scheduler = Scheduler(notes=list(stage.notes), duration_fn=self.bank.duration,
+                                   loop_m=self.index.length_m if stage.loop else 0.0)
         self.player: Player = make_player(
             samplerate=cfg.get("audio.samplerate"),
             blocksize=cfg.get("audio.blocksize"),
@@ -201,6 +204,7 @@ class CoDriver:
             "stage": stage.name,
             "notes": len(stage.notes),
             "length_m": stage.length_m,
+            "loop": bool(stage.loop),
             "port": cfg.get("telemetry.port"),
             "voice": self.voice_name,
         })
@@ -282,14 +286,18 @@ class CoDriver:
                 "off_m": fix.off_line_m,
                 "next": nxt.text if nxt else None,
                 "next_at_m": nxt.at_m if nxt else None,
-                "upcoming": [note_brief(n) for n in scheduler.upcoming(2)],
+                # distance the short way round: on a circuit a note behind
+                # the seam is ahead, not behind
+                "next_in_m": scheduler.distance_to(nxt.at_m) if nxt else None,
+                "upcoming": [{**note_brief(n), "in_m": scheduler.distance_to(n.at_m)}
+                             for n in scheduler.upcoming(2)],
                 "spoken": scheduler.spoken,
                 "dropped": scheduler.dropped,
             })
         display.status(
             f"[{fix.state.value:^9}] {fix.along_m / 1000:7.3f} km  "
             f"{frame.speed_kmh:5.1f} km/h  off {fix.off_line_m:4.1f} m  "
-            + (f"next: {nxt.text} @{nxt.at_m / 1000:.3f} km" if nxt else "no notes remaining")
+            + (f"next: {nxt.text} in {scheduler.distance_to(nxt.at_m):.0f} m" if nxt else "no notes remaining")
         )
 
     # -- the end -----------------------------------------------------------------

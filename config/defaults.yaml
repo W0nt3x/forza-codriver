@@ -84,6 +84,14 @@ stage:
     # Driving slower than this (km/h) at the start and end of the recording is
     # cut off, so waiting at the line is not part of the stage.
     trim_below_kmh: 3.6
+    # A recording that ends within this many metres of where it started is a
+    # circuit: the co-driver keeps going round instead of falling silent at
+    # the start/finish line. A recording with several laps is cut to one
+    # (the first line-to-line lap) before this is checked.
+    loop_close_m: 60.0
+    # ...and it has to be at least this long, so a short rewind back to the
+    # start is not mistaken for a circuit.
+    loop_min_length_m: 300.0
 
   resample:
     # Gaps in the recording longer than this (metres) are filled in first.

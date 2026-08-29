@@ -66,6 +66,9 @@ class PlayEvent:
 class _Pending:
     note: Note
     fired_at_m: float
+    at_m: float = 0.0
+    """Where the corner is, unrolled: on a circuit a note's position grows
+    by one lap length every lap, so the seam never needs special cases."""
 
 
 def _rank_one(kind: str, severity: int | None) -> int:
@@ -107,6 +110,11 @@ class Scheduler:
     min_lead_m: float = 15.0
     max_lead_m: float = 400.0
     drop_if_later_than_s: float = 0.3
+    loop_m: float = 0.0
+    """One lap of a circuit, in metres; 0 for a point-to-point stage. On a
+    circuit the notes repeat every lap: positions are unrolled (lap count
+    times lap length) so the firing, dropping and contention rules never
+    see the seam."""
 
     _next: int = field(default=0, repr=False)
     _queue: list[_Pending] = field(default_factory=list, repr=False)
@@ -118,6 +126,9 @@ class Scheduler:
         self.notes = sorted(self.notes, key=lambda n: n.at_m)
         self._at_ms = [n.at_m for n in self.notes]
         self._along_m = -1e9
+        self._lap = 0
+        self._next_lap = 0
+        self._last_along = float("nan")
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -128,9 +139,52 @@ class Scheduler:
             log.info("relocate: flushed %d queued note(s)", len(self._queue))
         self._queue.clear()
         self._along_m = along_m
+        self._last_along = along_m
+        self._lap = 0
+        self._next_lap = 0
         self._next = 0
         while self._next < len(self.notes) and self.notes[self._next].at_m <= along_m:
             self._next += 1
+        if self._next >= len(self.notes) and self.loop_m > 0 and self.notes:
+            # Past the last note of the lap: the next one is the first of
+            # the next lap.
+            self._next = 0
+            self._next_lap = 1
+
+    # -- circuits ----------------------------------------------------------
+
+    def _unroll(self, along_m: float) -> float:
+        """The car's position with laps counted in. A drop by more than half
+        a lap between two ticks is the seam crossed forwards, a rise by that
+        much is the seam crossed backwards (reversing over the line)."""
+        if self.loop_m > 0 and self._last_along == self._last_along:  # not nan
+            if along_m < self._last_along - self.loop_m / 2:
+                self._lap += 1
+            elif along_m > self._last_along + self.loop_m / 2:
+                self._lap -= 1
+        self._last_along = along_m
+        return along_m + self._lap * self.loop_m
+
+    def _peek_next(self) -> tuple[Note, float] | None:
+        """The next note to fire and its unrolled position."""
+        if self._next >= len(self.notes):
+            return None
+        note = self.notes[self._next]
+        return note, note.at_m + self._next_lap * self.loop_m
+
+    def _advance_next(self) -> None:
+        self._next += 1
+        if self.loop_m > 0 and self.notes and self._next >= len(self.notes):
+            self._next = 0
+            self._next_lap += 1
+
+    def distance_to(self, note_at_m: float) -> float:
+        """Metres from the car to a note's position, the short way round on
+        a circuit: a note just behind the seam is a lap ahead, not behind."""
+        d = note_at_m - self._along_m
+        if self.loop_m > 0 and d < 0:
+            d += self.loop_m
+        return d
 
     def flush(self) -> None:
         """Stream suspended (pause/finish): whatever is queued must not play
@@ -149,16 +203,20 @@ class Scheduler:
     def tick(self, along_m: float, speed_mps: float, now: float) -> list[PlayEvent]:
         """Advance to ``along_m`` at ``speed_mps``; return phrases to start now."""
         self._along_m = along_m
+        along_m = self._unroll(along_m)
         # 1. Fire: move notes whose lead distance has been reached into the
         #    queue. The lead uses each note's own phrase duration, a long
         #    linked phrase fires earlier than a bare "3 left".
-        while self._next < len(self.notes):
-            note = self.notes[self._next]
-            phrase_s = self.duration_fn(note.tokens)
-            if note.at_m - along_m > self.lead_m(speed_mps, phrase_s):
+        while True:
+            nxt = self._peek_next()
+            if nxt is None:
                 break
-            self._queue.append(_Pending(note, along_m))
-            self._next += 1
+            note, at_m = nxt
+            phrase_s = self.duration_fn(note.tokens)
+            if at_m - along_m > self.lead_m(speed_mps, phrase_s):
+                break
+            self._queue.append(_Pending(note, along_m, at_m))
+            self._advance_next()
 
         # 2. Contend: if more than one note is waiting for the mouth, the less
         #    severe loses. This is the two-notes-overlap rule from the runtime design;
@@ -179,7 +237,7 @@ class Scheduler:
                 pending = self._queue[0]
                 phrase_s = self.duration_fn(pending.note.tokens)
                 eta_s = (
-                    (pending.note.at_m - along_m) / speed_mps
+                    (pending.at_m - along_m) / speed_mps
                     if speed_mps > 0.5
                     else float("inf")
                 )
@@ -228,13 +286,14 @@ class Scheduler:
         the driver would be told about a 5 and surprised by the 1 behind it.
         Sacrifice the milder note instead.
         """
-        if speed_mps <= 0.5 or self._next >= len(self.notes):
+        nxt = self._peek_next()
+        if speed_mps <= 0.5 or nxt is None:
             return None
-        upcoming = self.notes[self._next]
+        upcoming, upcoming_at_m = nxt
         if _severity_rank(upcoming) >= _severity_rank(pending_note):
             return None
         upcoming_s = self.duration_fn(upcoming.tokens)
-        upcoming_corner_t = now + (upcoming.at_m - along_m) / speed_mps
+        upcoming_corner_t = now + (upcoming_at_m - along_m) / speed_mps
         earliest_finish = now + phrase_s + upcoming_s
         if earliest_finish > upcoming_corner_t + self.drop_if_later_than_s:
             return upcoming
@@ -246,9 +305,8 @@ class Scheduler:
     def next_note(self) -> Note | None:
         if self._queue:
             return self._queue[0].note
-        if self._next < len(self.notes):
-            return self.notes[self._next]
-        return None
+        nxt = self._peek_next()
+        return nxt[0] if nxt else None
 
     def upcoming(self, count: int = 2) -> list[Note]:
         """The next ``count`` corners *ahead of the car*, by position: what
@@ -256,9 +314,13 @@ class Scheduler:
         well before its corner, and the driver still has that corner in front
         of them until the car reaches it. The overlay keeps showing a corner
         until the car passes its entry; the voice speaks it somewhere on the
-        way there."""
+        way there. On a circuit the list continues past the seam with the
+        first corners of the next lap."""
         i = bisect.bisect_right(self._at_ms, self._along_m)
-        return self.notes[i:i + count]
+        out = self.notes[i:i + count]
+        if self.loop_m > 0 and len(out) < count:
+            out = out + self.notes[:count - len(out)]
+        return out
 
     def speaking(self, now: float) -> bool:
         return now < self._speaking_until
